@@ -282,3 +282,7 @@ python -m analysis.display_json \
 # then run in the interactive session
 # plot_sysperf_cdf(d)
 ```
+
+## Results
+
+<img src='images/position-2d (1).png' width=400> <img src='images/position-2d.png' width=400>

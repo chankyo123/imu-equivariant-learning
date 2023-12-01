@@ -7,8 +7,8 @@ We introduce a yaw-equivariannt Network-Coupled Inertial Odemetry with creating 
 
 <!-- <img src='images/1dconv-total.png' width=300> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <img src='images/equivariant system.png' width=350> -->
 
-<img src='images/1dconv-total.png' width=300> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-<img src='images/equivariant system.png' width=350>;
+<img src='images/1dconv-total.png' width=300>
+<!-- <img src='images/equivariant system.png' width=350>; -->
 
 ## Installation
 All dependencies can be installed using conda via

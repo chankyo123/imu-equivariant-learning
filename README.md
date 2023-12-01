@@ -17,7 +17,7 @@ conda env create -f environment.yaml
 ```
 Then the virtual environment is accessible with:
 ```shell script
-conda activate tlio
+conda activate iql
 ```
 
 Next commands should be run from this environment.

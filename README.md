@@ -288,4 +288,4 @@ python -m analysis.display_json \
 Sample trajectories in IMU Equivariant Learning-Coupled State Estimator. Accurate trajectory estimation is achieved through yaw-equvariant network providing robustness in perturbation in yaw axis.
 
 <img src='images/position-2d (1).png' width=400> <img src='images/position-2d.png' width=400>
-<img src='images/table.png' width=400>
+<img src='images/table.png' width=1000>

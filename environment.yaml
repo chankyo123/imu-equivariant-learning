@@ -1,4 +1,4 @@
-name: tlio
+name: iql
 channels:
   - pytorch
   - pytorch3d

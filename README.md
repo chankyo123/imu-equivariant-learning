@@ -5,7 +5,7 @@ Created by Chankyo Kim, Minghan Zhu, and <a href="https://curly.engin.umich.edu/
 ## Overview
 We introduce a yaw-equivariannt Network-Coupled Inertial Odemetry with creating fully SO(3) equivariant neural networks from conventional neural networks. Through the equivariant network, we get better generalization of displacement estimation without considering distribution of IMU measurement data, any other augmentations in data and architecture
 
-<img src='images/vn_teaser.PNG' width=300> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <img src='images/vector_neurons.PNG' width=350>
+<img src='images/1dconv-total.png' width=300> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <img src='images/equivariant system.png' width=350>
 
 ## Installation
 All dependencies can be installed using conda via

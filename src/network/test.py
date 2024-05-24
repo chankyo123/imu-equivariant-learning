@@ -59,13 +59,11 @@ def compute_rpe(rpe_ns, ps, ps_gt, yaw, yaw_gt):
     return rpe_rmse, rpe_rmse_z, relative_yaw_rmse, rpes
 
 
-def pose_integrate(args, dataset, preds):
+def pose_integrate(args, dataset, preds, use_pred_vel, body_frame):
     """
     Concatenate predicted velocity to reconstruct sequence trajectory
-    """
-    dp_t = args.window_time
-    pred_vels = preds / dp_t
-
+    """      
+    
     #ind = np.array([i[1] for i in dataset.index_map], dtype=np.int)
     #delta_int = int(
     #    args.window_time * args.imu_freq / 2.0
@@ -75,15 +73,46 @@ def pose_integrate(args, dataset, preds):
     #ind_intg = ind + delta_int  # the indices of doing integral
 
     ts = dataset.get_ts_last_imu_us() * 1e-6
-    r_gt, pos_gt = dataset.get_gt_traj_center_window_times()
+    if body_frame:
+        r_gt, pos_gt, vel_body_gt = dataset.get_gt_traj_center_window_times(body_frame)
+    else:
+        r_gt, pos_gt = dataset.get_gt_traj_center_window_times(body_frame)
+        
     eul_gt = r_gt.as_euler("xyz", degrees=True)
-
+    rotation_matrices = r_gt.as_matrix() 
+    if body_frame:
+        if use_pred_vel:
+            pred_vels_bd = preds   #body frame velocity
+            pred_vels = np.einsum('ijk,ik->ij', rotation_matrices, pred_vels_bd)
+        else:
+            dp_t = args.window_time
+            pred_vels_bd = preds / dp_t
+            pred_vels = np.einsum('ijk,ik->ij', rotation_matrices, pred_vels_bd)
+            # pred_vels = pred_vels_bd
+            
+        # pred_vels = np.einsum('ijk,ik->ij', rotation_matrices, pred_vels_bd)
+        vel_world_gt= np.einsum('ijk,ik->ij', rotation_matrices, vel_body_gt)
+        
+        vel_world_gt= vel_body_gt
+    else:
+        dp_t = args.window_time
+        pred_vels = preds / dp_t
     #dts = np.mean(ts[ind_intg[1:]] - ts[ind_intg[:-1]])
     dts = np.mean(ts[1:] - ts[:-1])
     #pos_intg = np.zeros([pred_vels.shape[0] + 1, args.output_dim])
     pos_intg = np.zeros([pred_vels.shape[0], args.output_dim])
     #pos_intg[0] = pos_gt[0]
-    pos_intg = np.cumsum(pred_vels[:, :] * dts, axis=0) + pos_gt[0]
+    if use_pred_vel:
+        # displacement_intg = np.cumsum(pred_vels[:, :] * dts*1000000, axis=0)
+        displacement_intg = np.cumsum(pred_vels[:, :] * dts, axis=0)
+        # R_z = Rotation.from_euler("xyz", [0, 0, -30], degrees=True).as_matrix()
+        # print(r_gt.as_matrix()[0,:,:])
+        # displacement_intg = np.einsum('jk,ik->ij', R_z, displacement_intg)
+    else:
+        displacement_intg = np.cumsum(pred_vels[:, :] * dts, axis=0)
+    pos_intg =  displacement_intg+ pos_gt[0]
+
+        # pos_gt = pos_intg_gt + pos_gt[0]
     #ts_intg = np.append(ts[ind_intg], ts[ind_intg[-1]] + dts)
     ts_intg = np.append(ts[0], ts[-1] + dts)
 
@@ -165,9 +194,12 @@ def compute_metrics_and_plotting(args, net_attr_dict, traj_attr_dict):
     metrics["ronin"]["mse_loss_y"] = float(mse_loss[1])
     metrics["ronin"]["mse_loss_z"] = float(mse_loss[2])
     metrics["ronin"]["mse_loss_avg"] = float(avg_mse_loss)
-    metrics["ronin"]["likelihood_loss_x"] = float(likelihood_loss[0])
-    metrics["ronin"]["likelihood_loss_y"] = float(likelihood_loss[1])
-    metrics["ronin"]["likelihood_loss_z"] = float(likelihood_loss[2])
+    # metrics["ronin"]["likelihood_loss_x"] = float(likelihood_loss[0])
+    # metrics["ronin"]["likelihood_loss_y"] = float(likelihood_loss[1])
+    # metrics["ronin"]["likelihood_loss_z"] = float(likelihood_loss[2])
+    metrics["ronin"]["likelihood_loss_x"] = float(likelihood_loss)
+    metrics["ronin"]["likelihood_loss_y"] = float(likelihood_loss)
+    metrics["ronin"]["likelihood_loss_z"] = float(likelihood_loss)
     metrics["ronin"]["likelihood_loss_avg"] = float(avg_likelihood_loss)
 
     """ ------------ Data for plotting ----------- """
@@ -185,6 +217,8 @@ def compute_metrics_and_plotting(args, net_attr_dict, traj_attr_dict):
         "rmse": rmse,
         "rpe_rmse": rpe_rmse,
         "rpes": rpes,
+        "preds_vel": net_attr_dict["preds_vel"],
+        "targets_vel": net_attr_dict["targets_vel"],
     }
 
     return metrics, plot_dict
@@ -258,7 +292,7 @@ def plot_3d_1var_with_sigma(x, y, sig, xlb, ylbs, num=None, dpi=None, figsize=No
     return fig
 
 
-def make_plots(args, plot_dict, outdir):
+def make_plots(args, plot_dict, outdir, use_pred_vel):
     ts = plot_dict["ts"]
     pos_pred = plot_dict["pos_pred"]
     pos_gt = plot_dict["pos_gt"]
@@ -266,6 +300,9 @@ def make_plots(args, plot_dict, outdir):
     preds = plot_dict["preds"]
     targets = plot_dict["targets"]
     pred_sigmas = plot_dict["pred_sigmas"]
+    preds_vel = plot_dict["preds_vel"]
+    targets_vel = plot_dict["targets_vel"]
+        
     rmse = plot_dict["rmse"]
     rpe_rmse = plot_dict["rpe_rmse"]
     rpes = plot_dict["rpes"]
@@ -274,7 +311,10 @@ def make_plots(args, plot_dict, outdir):
     figsize = (16, 9)
 
     fig1 = plt.figure(num="prediction vs gt", dpi=dpi, figsize=figsize)
-    targ_names = ["dx", "dy", "dz"]
+    if use_pred_vel: 
+        targ_names = ["vel_x", "vel_y", "vel_z"]
+    else:
+        targ_names = ["dx", "dy", "dz"]
     plt.subplot2grid((3, 2), (0, 0), rowspan=2)
     plt.plot(pos_pred[:, 0], pos_pred[:, 1], color='red')
     plt.plot(pos_gt[:, 0], pos_gt[:, 1], color='blue')
@@ -289,8 +329,12 @@ def make_plots(args, plot_dict, outdir):
     plt.legend(["RMSE:{:.3f}, RPE:{:.3f}".format(rmse, rpe_rmse)])
     for i in range(3):
         plt.subplot2grid((3, 2), (i, 1))
-        plt.plot(preds[:, i], color='red')
-        plt.plot(targets[:, i], color='blue')
+        if use_pred_vel:
+            plt.plot(preds_vel[:, i], color='red')
+            plt.plot(targets_vel[:, i], color='blue')    
+        else:
+            plt.plot(preds[:, i], color='red')
+            plt.plot(targets[:, i], color='blue')    
         plt.legend(["Predicted", "Ground truth"])
         plt.title("{}".format(targ_names[i]))
     plt.tight_layout()
@@ -386,58 +430,78 @@ def torch_to_numpy(torch_arr):
     return torch_arr.cpu().detach().numpy()
 
 
-def get_inference(network, data_loader, device, epoch):
+def get_inference(network, data_loader, device, epoch, body_frame_3regress):
     """
     Obtain attributes from a data loader given a network state
     Outputs all targets, predicts, predicted covariance params, and losses in numpy arrays
     Enumerates the whole data loader
     """
     targets_all, preds_all, preds_cov_all, losses_all = [], [], [], []
+    targets_vel_all, preds_vel_all = [], []
     network.eval()
 
     for bid, sample in enumerate(data_loader):
         sample = to_device(sample, device)
         feat = sample["feats"]["imu0"]
         
-        #if random SO(3) rotate in test stage
-        rotation_matrix = np.array([[0.1097, 0.1448, 0.9834],[0.8754, -0.4827, -0.0266],[0.4708, 0.8637, -0.1797]])
-        rotation_matrix = torch.from_numpy(rotation_matrix).to('cuda').to(torch.float32)
-        accelerometer_data = feat[:, :3,:].to(torch.float32)
-        accelerometer_data = accelerometer_data.permute(1,0,2).reshape(3,-1)
-        gyroscope_data = feat[:, 3:, :].to(torch.float32)
-        gyroscope_data = gyroscope_data.permute(1,0,2).reshape(3,-1)
+        # #if random SO(3) rotate in test stage
+        # rotation_matrix = np.array([[0.1097, 0.1448, 0.9834],[0.8754, -0.4827, -0.0266],[0.4708, 0.8637, -0.1797]])
+        # rotation_matrix = torch.from_numpy(rotation_matrix).to('cuda').to(torch.float32)
+        # accelerometer_data = feat[:, :3,:].to(torch.float32)
+        # accelerometer_data = accelerometer_data.permute(1,0,2).reshape(3,-1)
+        # gyroscope_data = feat[:, 3:, :].to(torch.float32)
+        # gyroscope_data = gyroscope_data.permute(1,0,2).reshape(3,-1)
 
-        rotated_accelerometer_data = torch.matmul(rotation_matrix, accelerometer_data)
-        rotated_accelerometer_data = rotated_accelerometer_data.reshape(rotated_accelerometer_data.size(0), feat.size(0), feat.size(2))
-        rotated_accelerometer_data = rotated_accelerometer_data.permute(1,0,2)
-        rotated_gyroscope_data = torch.matmul(rotation_matrix, gyroscope_data)
-        rotated_gyroscope_data = rotated_gyroscope_data.reshape(rotated_gyroscope_data.size(0), feat.size(0), feat.size(2))
-        rotated_gyroscope_data = rotated_gyroscope_data.permute(1,0,2)
-        pred, pred_cov = network(feat)
+        # rotated_accelerometer_data = torch.matmul(rotation_matrix, accelerometer_data)
+        # rotated_accelerometer_data = rotated_accelerometer_data.reshape(rotated_accelerometer_data.size(0), feat.size(0), feat.size(2))
+        # rotated_accelerometer_data = rotated_accelerometer_data.permute(1,0,2)
+        # rotated_gyroscope_data = torch.matmul(rotation_matrix, gyroscope_data)
+        # rotated_gyroscope_data = rotated_gyroscope_data.reshape(rotated_gyroscope_data.size(0), feat.size(0), feat.size(2))
+        # rotated_gyroscope_data = rotated_gyroscope_data.permute(1,0,2)
+        if body_frame_3regress : 
+            pred, pred_cov, pred_vel = network(feat)
+            targ_vel = sample["vel_Body"][:,-1,:]
+        else:
+            pred, pred_cov = network(feat)
+            # print(feat.shape, pred.shape, pred_cov.shape)  @torch.Size([1024, 9, 200]) torch.Size([1024, 3]) torch.Size([1024, 3])
+            
+            pred_vel = torch.tensor([1]).to('cuda')
+            targ_vel =torch.zeros_like(pred_vel)
 
         targ = sample["targ_dt_World"][:,-1,:]
+        
         # Only grab the last prediction in this case
         if len(pred.shape) == 3:
             pred = pred[:,:,-1]
             pred_cov = pred_cov[:,:,-1]
         
         assert len(pred.shape) == 2
-        loss = get_loss(pred, pred_cov, targ, epoch)
+        if body_frame_3regress: 
+            loss = get_loss(pred_vel, pred_cov, targ_vel, epoch, body_frame_3regress)
+        else:
+            loss = get_loss(pred, pred_cov, targ, epoch, False)
 
         targets_all.append(torch_to_numpy(targ))
         preds_all.append(torch_to_numpy(pred))
         preds_cov_all.append(torch_to_numpy(pred_cov))
         losses_all.append(torch_to_numpy(loss))
+        
+        targets_vel_all.append(torch_to_numpy(targ_vel))
+        preds_vel_all.append(torch_to_numpy(pred_vel))
     
     targets_all = np.concatenate(targets_all, axis=0)
     preds_all = np.concatenate(preds_all, axis=0)
     preds_cov_all = np.concatenate(preds_cov_all, axis=0)
     losses_all = np.concatenate(losses_all, axis=0)
+    targets_vel_all = np.concatenate(targets_vel_all, axis=0)
+    preds_vel_all = np.concatenate(preds_vel_all, axis=0)
     attr_dict = {
         "targets": targets_all,
         "preds": preds_all,
         "preds_cov": preds_cov_all,
         "losses": losses_all,
+        "targets_vel": targets_vel_all,
+        "preds_vel": preds_vel_all,
     }
     return attr_dict
 
@@ -534,7 +598,7 @@ def net_test(args):
     test_list = get_datalist(test_list_path)
 
     device = torch.device(
-        "cuda:0" if torch.cuda.is_available() and not args.cpu else "cpu"
+        "cuda" if torch.cuda.is_available() and not args.cpu else "cpu"
     )
     checkpoint = torch.load(args.model_path, map_location=device)
     network = get_model(args.arch, net_config, args.input_dim, args.output_dim).to(
@@ -569,9 +633,13 @@ def net_test(args):
             print(e)
             continue
 
+        use_pred_vel = True
+        body_frame_3regress = True
+        body_frame = True
+        
         # Obtain trajectory
         start_t = time.time()
-        net_attr_dict = get_inference(network, seq_loader, device, epoch=50)
+        net_attr_dict = get_inference(network, seq_loader, device, epoch=50, body_frame_3regress = body_frame_3regress)
         end_t = time.time()
         mem_used_max_GB = torch.cuda.max_memory_allocated() / (1024*1024*1024)
         torch.cuda.reset_peak_memory_stats()
@@ -585,7 +653,11 @@ def net_test(args):
         with open(time_mem_log, 'a') as log_file:
             log_file.write(f"Inference time : {end_t - start_t:.4f} seconds, {mem_used_max_GB:.3f}GB\n")
         
-        traj_attr_dict = pose_integrate(args, seq_dataset, net_attr_dict["preds"])
+        if use_pred_vel:
+            traj_attr_dict = pose_integrate(args, seq_dataset, net_attr_dict["preds_vel"], use_pred_vel, body_frame)
+        else:
+            traj_attr_dict = pose_integrate(args, seq_dataset, net_attr_dict["preds"], use_pred_vel, body_frame)
+            
         outdir = osp.join(args.out_dir, data)
         if osp.exists(outdir) is False:
             os.mkdir(outdir)
@@ -604,6 +676,15 @@ def net_test(args):
         metrics, plot_dict = compute_metrics_and_plotting(
             args, net_attr_dict, traj_attr_dict
         )
+        
+        # only consider diagonal term of covariance
+        if len(plot_dict["pred_sigmas"].shape) == 3:
+            plot_dict["pred_sigmas"] = plot_dict["pred_sigmas"][:, torch.arange(3), torch.arange(3)]
+        elif plot_dict["pred_sigmas"].shape[1] == 3:
+            plot_dict["pred_sigmas"] = plot_dict["pred_sigmas"]
+        elif plot_dict["pred_sigmas"].shape[1] == 6:
+            plot_dict["pred_sigmas"] = plot_dict["pred_sigmas"][:,:3]
+            
         logging.info(metrics)
         all_metrics[data] = metrics
 
@@ -620,7 +701,7 @@ def net_test(args):
         np.savetxt(outfile_net, net_outputs_data, delimiter=",")
 
         if args.save_plot:
-            make_plots(args, plot_dict, outdir)
+            make_plots(args, plot_dict, outdir, use_pred_vel)
 
         try:
             with open(args.out_dir + "/metrics.json", "w") as f:

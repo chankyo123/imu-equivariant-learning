@@ -205,6 +205,17 @@ class TlioData:
         transforms.append(TransformInYawPlane(self.data_window_config["input_sensors"]))
         return transforms
 
+    def get_train_transforms_bodyframe(self):
+        transforms = []
+        print('transformation for bodyframe_training!')
+        if self.augmentation_options["do_bias_shift"]:
+            transforms.append(
+                TransformAddNoiseBias(self.data_window_config["input_sensors"],
+                    **self.augmentation_options["bias_shift_options"])
+            )
+
+        return transforms
+    
     def get_datalist(self, split="val"):
         dataset = getattr(self, f"{split}_dataset")
         assert dataset is not None, f"Tried to get {split} list but {split}_dataset is None"

@@ -233,6 +233,8 @@ class SequencesDataset:
                 
                 if "imu" in sensor_name:
                     feat = data_chunk[:,1:7] # gyro, accelerometer
+                    feat_vel_body = data_chunk[:, -3:]
+                    feat = np.concatenate((feat, feat_vel_body), axis=1)
                 if "mag" in sensor_name:
                     feat = data_chunk[:,1:4]
                 if "barom" in sensor_name:
@@ -255,6 +257,9 @@ class SequencesDataset:
         return feats, gt_data
 
     def data_chunk_from_seq_data(self, seq_data, seq_desc, row):
+        body_frame = True
+        body_frame_velocity = False
+        
         feats, gt_data = self.unpack_data_window(seq_data, seq_desc, row)
 
         # Normalize the raw sensor data into something better for learning (sensor-dependent)
@@ -265,39 +270,66 @@ class SequencesDataset:
         targ_dR_World, targ_dt_World = self.poses_to_target(rot, pos)
 
         R_world_gla = np.eye(3)
-        if self.genparams.express_in_t0_yaw_normalized_frame:
-            assert False
-            R_W_0 = Rotation.from_quat(rot[0:1]).as_matrix()
-            angles_t0 = compute_euler_from_matrix(
-                R_W_0, "xyz", extrinsic=True
-            )
-            ri_z = angles_t0[0,2]
-            c = np.cos(ri_z)
-            s = np.sin(ri_z)
-            R_world_gla = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
-            targ_dt_World = np.einsum("ji,tj->ti", R_world_gla, targ_dt_World)
+        if not body_frame:
+            # print('data processing for world-frame!')
+            if self.genparams.express_in_t0_yaw_normalized_frame:
+                assert False
+                R_W_0 = Rotation.from_quat(rot[0:1]).as_matrix()
+                angles_t0 = compute_euler_from_matrix(
+                    R_W_0, "xyz", extrinsic=True
+                )
+                ri_z = angles_t0[0,2]
+                c = np.cos(ri_z)
+                s = np.sin(ri_z)
+                R_world_gla = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
+                targ_dt_World = np.einsum("ji,tj->ti", R_world_gla, targ_dt_World)
 
-            # Only IMU and mag data need to be rotated (not barometer)
-            for k, v in feats.items():
-                if "imu" in k:
-                    assert feats[k].shape[0] == 6
-                    feats[k][:3] = np.einsum("ji,jt->it", R_world_gla, feats[k][:3])
-                    feats[k][3:] = np.einsum("ji,jt->it", R_world_gla, feats[k][3:])
-                elif "mag" in k:
-                    assert feats[k].shape[0] == 3
-                    feats[k] = np.einsum("ji,jt->it", R_world_gla, feats[k])
+                # Only IMU and mag data need to be rotated (not barometer)
+                for k, v in feats.items():
+                    if "imu" in k:
+                        assert feats[k].shape[0] == 6
+                        feats[k][:3] = np.einsum("ji,jt->it", R_world_gla, feats[k][:3])
+                        feats[k][3:] = np.einsum("ji,jt->it", R_world_gla, feats[k][3:])
+                    elif "mag" in k:
+                        assert feats[k].shape[0] == 3
+                        feats[k] = np.einsum("ji,jt->it", R_world_gla, feats[k])
+        if body_frame:
+            ## represent targ_dt_World (displacement) in body frame in each step
+            if not body_frame_velocity : 
+                # for i in range(len(rot)):
+                #     R_W_i = Rotation.from_quat(rot[i]).as_matrix()
+                #     targ_dt_World[i] = np.einsum("ji,tj->ti", R_W_i, targ_dt_World[i].reshape(-1,3)).reshape(-1)
+                
+                R_W = Rotation.from_quat(rot).as_matrix()
+                targ_dt_World_reshaped = targ_dt_World.reshape(-1, 3, 1)
+                targ_dt_World = np.matmul(R_W.transpose(0, 2, 1), targ_dt_World_reshaped)
+                targ_dt_World = targ_dt_World.reshape(-1, 3)
+                # print('check targdt and vel : ', targ_dt_World[0,:] - vel[0,:])
+                
         
         # We may return multiple windows, so place them all in here for convenience.
-        windows = {
-            "main": {
-                "ts_us": ts_us,
-                "feats": feats,
-                "targ_dR_World": targ_dR_World.astype(np.float32),
-                "targ_dt_World": targ_dt_World.astype(np.float32),
-                "vel_World": vel.astype(np.float32),
-                "R_world_gla": R_world_gla,
+        if body_frame : 
+            windows = {
+                "main": {
+                    "ts_us": ts_us,
+                    "feats": feats,
+                    "targ_dR_World": targ_dR_World.astype(np.float32),
+                    "targ_dt_World": targ_dt_World.astype(np.float32),
+                    "vel_Body": vel.astype(np.float32),
+                    "R_world_gla": R_world_gla,
+                }
             }
-        }
+        else:
+            windows = {
+                "main": {
+                    "ts_us": ts_us,
+                    "feats": feats,
+                    "targ_dR_World": targ_dR_World.astype(np.float32),
+                    "targ_dt_World": targ_dt_World.astype(np.float32),
+                    "vel_World": vel.astype(np.float32),
+                    "R_world_gla": R_world_gla,
+                }
+            }
 
         return seq_desc[self.get_base_sensor_name()], windows
     

@@ -3,6 +3,7 @@ from numba import jit
 from utils.from_scipy import compute_euler_from_matrix
 from utils.logging import logging
 from utils.math_utils import Jr_exp, hat, mat_exp, mat_exp_vec, mat_log, rot_2vec
+from tracker.LieGroup import *
 
 
 class State(object):
@@ -19,10 +20,18 @@ class State(object):
         self.N = 0  # number of past states
         self.si_Rs = []  # past states
         self.si_ps = []  # past states
+        self.si_vs = []  # past states (velocity)
         self.si_Rs_fej = []
         self.si_ps_fej = []
+        self.si_vs_fej = [] 
         self.si_timestamps_us = []
         self.unobs_shift = None
+        
+        self.InEKF_StateType = "WorldCentric"
+        self.InEKF_ErrorType = "RightInvariant"
+        self.dimX = 5   # se2(3)
+        self.dimTheta = 6   # b_g, b_a
+        self.dimP = 15  # R,v,k,bg,ba
 
     def initialize_state(self, t_us, R, v, p, ba_init, bg_init):
         # take the first accel data to get gravity direction
@@ -35,13 +44,16 @@ class State(object):
         self.s_timestamp_us = t_us
         self.si_Rs = []
         self.si_ps = []
+        self.si_vs = []
         self.si_Rs_fej = []
         self.si_ps_fej = []
+        self.si_vs_fej = []
+            
 
         self.si_timestamps_us = []
         self.unobs_shift = self.generate_unobservable_shift()
 
-    def reset_state(self, Rs, ps, R, v, p, ba_init, bg_init):
+    def reset_state(self, Rs, ps, vs, R, v, p, ba_init, bg_init):
         # take the first accel data to get gravity direction
         self.s_R = R
         self.s_v = v  # m/s
@@ -50,8 +62,10 @@ class State(object):
         self.s_ba = ba_init  # m/s^2
         self.si_Rs = Rs
         self.si_ps = ps
+        self.si_vs = vs
         self.si_Rs_fej = Rs
         self.si_ps_fej = ps
+        self.si_vs_fej = vs
         # self.unobs_shift = self.generateUnobservableShift() # TODO(dcaruso)
 
     def __repr__(self):
@@ -246,7 +260,7 @@ class ImuMSCKF:
         self.meas_sigma = np.zeros((3, 1))
         self.inno_sigma = np.zeros((3, 1))
 
-    def reset_covariance(self):
+    def reset_covariance(self, use_riekf = False):
         var_atti = np.power(self.init_attitude_sigma, 2.0)
         var_yaw = np.power(self.init_yaw_sigma, 2.0)
         var_vel = np.power(self.init_vel_sigma, 2.0)
@@ -255,9 +269,10 @@ class ImuMSCKF:
         var_ba_init = np.power(self.init_ba_sigma, 2.0)
 
         Cov = np.zeros((15 + 6 * self.state.N, 15 + 6 * self.state.N))
-        for i, _ in enumerate(self.state.si_timestamps_us):
-            Cov[6 * i :, 6 * i :][0:3, 0:3] = np.diag([var_atti, var_atti, var_yaw])
-            Cov[6 * i :, 6 * i :][3:6, 3:6] = np.diag([var_pos, var_pos, var_pos])
+        if not use_riekf:
+            for i, _ in enumerate(self.state.si_timestamps_us):
+                Cov[6 * i :, 6 * i :][0:3, 0:3] = np.diag([var_atti, var_atti, var_yaw])
+                Cov[6 * i :, 6 * i :][3:6, 3:6] = np.diag([var_pos, var_pos, var_pos])
 
         Cov15 = Cov[-15:, -15:]  # no copy, ref
         Cov15[:3, :3] = np.diag(np.array([var_atti, var_atti, var_yaw]))
@@ -266,9 +281,13 @@ class ImuMSCKF:
         Cov15[9:12, 9:12] = np.diag(np.array([var_bg_init, var_bg_init, var_bg_init]))
         Cov15[12:15, 12:15] = np.diag(np.array([var_ba_init, var_ba_init, var_ba_init]))
         self.Sigma = Cov
-        self.Sigma15 = Cov[-15:, -15:]
+        if use_riekf:
+            self.Sigma15 = Cov15
+        else:
+            self.Sigma15 = Cov[-15:, -15:]
+        # self.Sigma15 = Cov[-15:, -15:]
 
-    def prepare_filter(self):
+    def prepare_filter(self, use_riekf = False):
         # define noise covariances
         var_a = np.power(self.sigma_na, 2.0)
         var_g = np.power(self.sigma_ng, 2.0)
@@ -277,35 +296,36 @@ class ImuMSCKF:
         self.W = np.diag(np.array([var_g, var_g, var_g, var_a, var_a, var_a]))
         self.Q = np.diag(np.array([var_bg, var_bg, var_bg, var_ba, var_ba, var_ba]))
         # initialize state covariance
-        self.reset_covariance()
+        self.reset_covariance(use_riekf)
 
     def initialize_state(self, t_us, R, v, p, ba_init, bg_init):
         self.state.initialize_state(t_us, R, v, p, ba_init, bg_init)
         self.last_timestamp_reset_us = t_us
 
-    def reset_state_and_covariance(self, Rs, ps, R, v, p, ba_init, bg_init):
-        assert len(Rs) == self.state.N
-        assert len(ps) == self.state.N
-
-        self.state.reset_state(Rs, ps, R, v, p, ba_init, bg_init)
-        self.reset_covariance()
+    def reset_state_and_covariance(self, Rs, ps, vs, R, v, p, ba_init, bg_init, use_riekf = False):
+        if not use_riekf:
+            assert len(Rs) == self.state.N
+            assert len(ps) == self.state.N
+        self.state.reset_state(Rs, ps, vs, R, v, p, ba_init, bg_init)
+        self.reset_covariance(use_riekf)
         self.last_timestamp_reset_us = self.state.s_timestamp_us
 
-        assert len(Rs) == self.state.N
-        assert len(ps) == self.state.N
-        assert self.Sigma.shape[0] == self.state.N * 6 + 15
-        assert self.Sigma.shape[1] == self.state.N * 6 + 15
+        if not use_riekf:
+            assert len(Rs) == self.state.N
+            assert len(ps) == self.state.N
+            assert self.Sigma.shape[0] == self.state.N * 6 + 15
+            assert self.Sigma.shape[1] == self.state.N * 6 + 15
 
-    def initialize_with_state(self, t_us, R, v, p, ba_init, bg_init):
+    def initialize_with_state(self, t_us, R, v, p, ba_init, bg_init, use_riekf = False):
         assert isinstance(t_us, int)
-        self.prepare_filter()
+        self.prepare_filter(use_riekf)
         self.initialized = True
         self.initialize_state(t_us, R, v, p, ba_init, bg_init)
         logging.info("filter initialized with full state!")
 
-    def initialize(self, t_us, acc, ba_init, bg_init):
+    def initialize(self, t_us, acc, ba_init, bg_init, use_riekf = False):
         assert isinstance(t_us, int)
-        self.prepare_filter()
+        self.prepare_filter(use_riekf)
         self.initialized = True
         self.initialize_state(
             t_us,
@@ -377,6 +397,197 @@ class ImuMSCKF:
                 return False
         return True
 
+    def propagate_riekf(self, acc, gyr, t_us):
+
+        # Bias corrected IMU measurements
+        R_k, v_k, p_k, b_ak, b_gk = (
+            self.state.s_R,
+            self.state.s_v,
+            self.state.s_p,
+            self.state.s_ba,
+            self.state.s_bg,
+        )
+        w = gyr - b_gk
+        a = acc - b_ak
+
+        # Get current state estimate and dimensions
+        dimX = self.state.dimX
+        X = np.eye(dimX)
+        X[0:3, 0:3] = R_k
+        X[0:3, 3] = v_k.reshape(3, )
+        X[0:3, 4] = p_k.reshape(3, )
+
+        Xinv = np.eye(dimX)
+        RT = X[0:3, 0:3].T
+        Xinv[0:3, 0:3] = RT
+        for i in range(3, dimX):
+            Xinv[0:3, i] = -RT @ X[0:3, i]
+        
+        P = self.Sigma15
+        dimP = P.shape[0]
+        dimTheta = 6  # b_ak, b_gk
+        dt_us = t_us - self.state.s_timestamp_us
+        dt = dt_us * 1e-6
+        
+        # ------------ Propagate Covariance ------------- #
+        Phi = self.StateTransitionMatrix(w,a,dt)
+        Qd = self.DiscreteNoiseMatrix(Phi,dt)
+        P_pred = Phi @ P @ Phi.T + Qd
+
+        # add noise from bias model
+        # P_pred[-6:, -6:] += dt * self.Q
+        # P_pred = Phi @ P @ Phi.T
+        
+        
+        # ------------ Propagate Mean ------------- #
+        phi = w * dt
+        G0 = Gamma_SO3(phi, 0)
+        G1 = Gamma_SO3(phi, 1)
+        G2 = Gamma_SO3(phi, 2)
+
+        X_pred = X.copy()
+        if self.state.InEKF_StateType == 'WorldCentric':
+            # Propagate world-centric state estimate
+            X_pred[0:3, 0:3] = R_k @ G0
+            X_pred[0:3, 3] = (v_k + (R_k @ G1 @ a + self.g) * dt).reshape(3)
+            X_pred[0:3, 4] = (p_k + v_k * dt + (R_k @ G2 @ a + 0.5 * self.g) * dt * dt).reshape(3)
+        else:
+            # Propagate body-centric state estimate
+            G0t = G0.T
+            X_pred[0:3, 0:3] = G0t @ R_k
+            X_pred[0:3, 3] = (G0t @ (v_k - (G1 @ a + R_k @ self.g) * dt)).reshape(3)
+            X_pred[0:3, 4] = (G0t @ (p_k + v_k * dt - (G2 @ a + 0.5 * R_k @ self.g) * dt * dt)).reshape(3)
+            for j in range(5, dimX):
+                X_pred[0:3, j] = G0t @ X[0:3, j]
+
+        # ------------ Update State ------------- #
+        self.state.s_R = X_pred[0:3, 0:3]
+        self.state.s_v = X_pred[0:3, 3].reshape(-1, 1)
+        self.state.s_p = X_pred[0:3, 4].reshape(-1, 1)
+        self.state.s_ba = b_ak     # No change in bias in propagate step
+        self.state.s_bg = b_gk     # No change in bias in propagate step
+        self.state.s_timestamp_us = t_us
+        self.Sigma15 = P_pred
+        
+        self.state.si_Rs.append(self.state.s_R)  
+        self.state.si_vs.append(self.state.s_R.T @ self.state.s_v)  #save body velocity
+        self.state.si_timestamps_us.append(t_us)
+        
+    
+    def update_riekf(self, meas, meas_cov, t_begin_us, t_end_us):
+        R, v, p, b_a, b_g = (
+            self.state.s_R,
+            self.state.s_v,
+            self.state.s_p,
+            self.state.s_ba,
+            self.state.s_bg,
+        )
+        dimX = self.state.dimX
+        dimP = self.state.dimP
+        X = np.eye(dimX)
+        X[0:3, 0:3] = R
+        X[0:3, 3] = v.reshape(3, )
+        X[0:3, 4] = p.reshape(3, )
+
+        Theta = np.concatenate((b_g, b_a), axis=0)
+        P = self.Sigma15
+        # print(dimP)
+        # assert False
+        dimTheta = self.state.dimTheta
+
+        # # # Remove bias
+        # Theta = np.zeros((6,1))
+        # P[dimP-dimTheta:dimP-dimTheta+6,dimP-dimTheta:dimP-dimTheta+6] = 0.0001*np.eye(6)
+        # P[0:dimP-dimTheta,dimP-dimTheta:dimP] = np.zeros((dimP-dimTheta,dimTheta))
+        # P[dimP-dimTheta:dimP,0:dimP-dimTheta] = np.zeros((dimTheta,dimP-dimTheta))
+
+        # # Map from left invariant to right invariant error temporarily
+        # if self.state.InEKF_ErrorType == 'LeftInvariant':
+        #     Adj = np.eye(dimP)
+        #     Adj[0:dimP-dimTheta,0:dimP-dimTheta] = Adjoint_SEK3(X)
+        #     P = (Adj @ P @ Adj.T)
+        
+        
+        N = 1*np.eye(3)
+        # N = 0.01*np.eye(3)
+        # N = 0.001*np.eye(3)
+        
+        if self.use_const_cov:
+            val_x = self.const_cov_val_x
+            val_y = self.const_cov_val_y
+            val_z = self.const_cov_val_z
+            N = self.meascov_scale * np.diag(np.array([val_x, val_y, val_z]))
+            print('N value : ', np.array([val_x, val_y, val_z]))  #set to be -> N value :  [0.01 0.01 0.01]
+        
+        # symmetrize N
+        N = 0.5 * (N + N.T)
+        N[N < 1e-10] = 0
+        
+        H = np.zeros((3, dimP))
+        H[0:3,3:6] = np.eye(3) # I
+        
+        b = np.array([0, 0, 0, -1, 0]).reshape(-1,1)
+        Y = np.vstack((meas, np.array([-1, 0]).reshape(-1, 1)))
+        Z = X @ Y - b    # XY-b
+        Z = Z[0:3]
+        self.innovation = Z[0:3]
+                    
+        PHT = P @ H.T
+        S = H @ PHT + N
+        S_inv = np.linalg.inv(S)
+        K = PHT @ S_inv
+        delta = K @ Z
+        
+        dX = Exp_SEK3(delta[0:np.shape(delta)[0]-dimTheta])
+        dTheta = delta[np.shape(delta)[0]-dimTheta:]
+        
+        self.meas = X[0:3,0:3] @ meas
+        self.pred = X[0:3,3:4]
+        self.R = N
+        self.meas_sigma = np.sqrt(np.diag(N)).reshape(3, 1)
+        self.inno_sigma = np.sqrt(np.diag(S)).reshape(3, 1)
+        
+        X_new = dX @ X  #right invaraint
+        Theta_new = Theta + dTheta
+
+        # Set new state       
+        self.state.s_R = X_new[0:3, 0:3]
+        self.state.s_v = X_new[0:3, 3].reshape(-1, 1)
+        self.state.s_p = X_new[0:3, 4].reshape(-1, 1)
+        self.state.s_ba = Theta_new[3:6].reshape(-1, 1)
+        self.state.s_bg = Theta_new[0:3].reshape(-1, 1)
+        
+        # self.state.si_Rs.append(self.state.s_R)  
+        # self.state.si_vs.append(self.state.s_R.T @ self.state.s_v)  #save body velocity
+        # self.state.si_vs.append(self.state.s_v)     #save world velocity
+        
+
+        # Update Covariance
+        IKH = np.eye(dimP) - K @ H
+        P_new = IKH @ P @ IKH.T + K @ N @ K.T
+        
+        # # Don't update yaw covariance
+        # yaw_index = dimP - dimTheta + 2
+        # P_new[yaw_index, :] = 0
+        # P_new[:, yaw_index] = 0
+        # P_new[yaw_index, yaw_index] = 0.00001
+
+        # Map from right invariant back to left invariant error
+        if self.state.InEKF_ErrorType == 'LeftInvariant':
+            AdjInv = np.eye(dimP)
+            AdjInv[0:dimP-dimTheta,0:dimP-dimTheta] = Adjoint_SEK3(self.state_.Xinv())
+            P_new = (AdjInv @ P_new @ AdjInv.T)
+
+        # Set new covariance
+        # print('P_new.shape : ', P_new.shape)
+        
+        # normalized_square_error = np.linalg.multi_dot(
+        #     [Z.T, S_inv, Z]
+        # )
+        # print("Mahalanobis error =", normalized_square_error)
+        self.Sigma15 = P_new
+        
+        
     def propagate(self, acc, gyr, t_us, t_augmentation_us=None):
 
         R_k, v_k, p_k, b_ak, b_gk = (
@@ -482,6 +693,7 @@ class ImuMSCKF:
             exit(1)
 
         self.R = self.meascov_scale * meas_cov
+        # self.R = 2*np.eye(3)
         # set constant measurement covariance
         if self.use_const_cov:
             val_x = self.const_cov_val_x
@@ -598,6 +810,144 @@ class ImuMSCKF:
         self.state.unobs_shift = self.state.unobs_shift[6 * (cut_idx + 1) :, :]
         self.Sigma = self.Sigma[6 * (cut_idx + 1) :, 6 * (cut_idx + 1) :]
         self.state.N = self.state.N - (cut_idx + 1)
+        
+    def StateTransitionMatrix(self, w, a, dt):
+        phi = w*dt
+        G0 = Gamma_SO3(phi,0)
+        G1 = Gamma_SO3(phi,1)
+        G2 = Gamma_SO3(phi,2)
+        G0t = np.transpose(G0)
+        G1t = np.transpose(G1)
+        G2t = np.transpose(G2)
+        G3t = Gamma_SO3(-phi,3)
+        dimX = self.state.dimX
+        dimTheta = self.state.dimTheta
+        dimP = self.state.dimP
+        Phi = np.eye(dimP)
+
+        ax = skew(a)
+        wx = skew(w)
+        wx2 = wx@wx
+
+        dt2 = dt*dt
+        dt3 = dt2*dt
+        theta = np.linalg.norm(w)
+        theta2 = theta*theta
+        theta3 = theta2*theta
+        theta4 = theta3*theta
+        theta5 = theta4*theta
+        theta6 = theta5*theta
+        theta7 = theta6*theta
+        thetadt = theta*dt
+        thetadt2 = thetadt*thetadt
+        thetadt3 = thetadt2*thetadt
+        sinthetadt = np.sin(thetadt)
+        costhetadt = np.cos(thetadt)
+        sin2thetadt = np.sin(2*thetadt)
+        cos2thetadt = np.cos(2*thetadt)
+        thetadtcosthetadt = thetadt*costhetadt
+        thetadtsinthetadt = thetadt*sinthetadt
+
+
+        Phi25L = G0t@(ax@G2t*dt2\
+                + ((sinthetadt-thetadtcosthetadt)/(theta3))*(wx@ax)\
+                - ((cos2thetadt-4*costhetadt+3)/(4*theta4))*(wx@ax@wx)\
+                + ((4*sinthetadt+sin2thetadt-4*thetadtcosthetadt-2*thetadt)/(4*theta5))*(wx@ax@wx2)\
+                + ((thetadt2-2*thetadtsinthetadt-2*costhetadt+2)/(2*theta4))*(wx2@ax)\
+                - ((6*thetadt-8*sinthetadt+sin2thetadt)/(4*theta5))*(wx2@ax@wx)\
+                + ((2*thetadt2-4*thetadtsinthetadt-cos2thetadt+1)/(4*theta6))*(wx2@ax@wx2))
+
+        Phi35L = G0t@(ax@G3t*dt3\
+                - ((thetadtsinthetadt+2*costhetadt-2)/(theta4))*(wx@ax)\
+                - ((6*thetadt-8*sinthetadt+sin2thetadt)/(8*theta5))*(wx@ax@wx)
+                - ((2*thetadt2+8*thetadtsinthetadt+16*costhetadt+cos2thetadt-17)/(8*theta6))*(wx@ax@wx2)\
+                + ((thetadt3+6*thetadt-12*sinthetadt+6*thetadtcosthetadt)/(6*theta5))*(wx2@ax)\
+                - ((6*thetadt2+16*costhetadt-cos2thetadt-15)/(8*theta6))*(wx2@ax@wx)\
+                + ((4*thetadt3+6*thetadt-24*sinthetadt-3*sin2thetadt+24*thetadtcosthetadt)/(24*theta7))*(wx2@ax@wx2))
+
+
+        tol = 1e-6
+        if theta < tol:
+            Phi25L = (1/2)*ax*dt2
+            Phi35L = (1/6)*ax*dt3
+
+
+        if (self.state.InEKF_StateType == 'WorldCentric' and self.state.InEKF_ErrorType == 'LeftInvariant') or \
+           (self.state.InEKF_StateType == 'BodyCentric' and self.state.InEKF_ErrorType == 'RightInvariant'):
+            
+            Phi[0:3,0:3] = G0t.copy()
+            Phi[3:6,0:3] = -G0t@skew(G1@a)*dt
+            Phi[6:9,0:3] = -G0t@skew(G2@a)*dt2
+            Phi[3:6,3:6] = G0t.copy()
+            Phi[6:9,3:6] = G0t*dt
+            Phi[6:9,6:9] = G0t.copy()
+
+            for i in np.arange(5,dimX):
+                Phi[(i-2)*3:(i-2)*3+3,(i-2)*3:(i-2)*3+3] = G0t.copy()
+
+            Phi[0:3,dimP-dimTheta:dimP-dimTheta+3] = -G1t*dt
+            Phi[3:6,dimP-dimTheta:dimP-dimTheta+3] = Phi25L
+            Phi[6:9,dimP-dimTheta:dimP-dimTheta+3] = Phi35L
+            Phi[3:6,dimP-dimTheta+3:dimP-dimTheta+6] = -G1t*dt
+            Phi[6:9,dimP-dimTheta+3:dimP-dimTheta+6] = -G0t@G2*dt2
+
+
+            
+        else:
+            gx = skew(self.g)
+            R = self.state.s_R
+            v = self.state.s_v
+            p = self.state.s_p
+            RG0 = R@G0
+            RG1dt = R@G1*dt
+            RG2dt2 = R@G2*dt2
+            Phi[3:6,0:3] = gx*dt
+            Phi[6:9,0:3] = 0.5*gx*dt2
+            Phi[6:9,3:6] = np.eye(3)*dt
+            Phi[0:3,dimP-dimTheta:dimP-dimTheta+3] = -RG1dt
+            Phi[3:6,dimP-dimTheta:dimP-dimTheta+3] = -skew(v+RG1dt@a+self.g*dt)@RG1dt + RG0@Phi25L
+            Phi[6:9,dimP-dimTheta:dimP-dimTheta+3] = -skew(p+v*dt+RG2dt2@a+0.5*self.g*dt2)@RG1dt + RG0@Phi35L
+            Phi[3:6,dimP-dimTheta+3:dimP-dimTheta+6] = -RG1dt
+            Phi[6:9,dimP-dimTheta+3:dimP-dimTheta+6] = -RG2dt2
+
+        return Phi
+    
+    # Compute Discrete noise matrix
+    def DiscreteNoiseMatrix(self, Phi, dt):
+        dimX = self.state.dimX    # SE2(3)
+        dimTheta = 6    # b_a, b_g
+        dimP = 15   # R, v, p, b_a, b_g
+        G = np.eye(dimP)
+
+        # Compute 'Right Invariant' in 'World Centric' Model
+        # Compute G using Adjoint of Xk if needed, otherwise identity (Assumes unpropagated state)
+        R_k, v_k, p_k = (
+            self.state.s_R,
+            self.state.s_v,
+            self.state.s_p,
+        )
+        
+        WorldX = np.eye(dimX)
+        WorldX[0:3, 0:3] = R_k
+        WorldX[0:3, 3] = v_k.reshape(3, )
+        WorldX[0:3, 4] = p_k.reshape(3, )
+        
+        G[0:dimP-dimTheta,0:dimP-dimTheta] = Adjoint_SEK3(WorldX)
+        
+        # Continuous noise covariance 
+        Qc = np.zeros((dimP,dimP))  # Landmark noise terms will remain zero
+        Qc[0:3,0:3] = self.W[0:3,0:3]
+        Qc[3:6,3:6] = self.W[3:6,3:6]
+
+        # Qc[dimP-dimTheta:dimP-dimTheta+3,dimP-dimTheta:dimP-dimTheta+3] = self.Q[0:3,0:3]
+        # Qc[dimP-dimTheta+3:dimP-dimTheta+6,dimP-dimTheta+3:dimP-dimTheta+6] = self.Q[3:6,3:6]
+
+        # Noise Covariance Discretization
+        PhiG = Phi@G
+        Qd = PhiG @ Qc @ np.transpose(PhiG) * dt    # Approximated discretized noise matrix
+        Qd[-6:,-6:] += self.Q * dt    # Approximated discretized noise matrix
+
+        return Qd
 
 
 @jit(nopython=True, parallel=False, cache=True)

@@ -31,6 +31,11 @@ class ImuTracker:
         filter_tuning_cfg,
         imu_calib: Optional[ImuCalib] = None,
         force_cpu=False,
+        vio_path = None,
+        json_path = None,
+        body_frame = False,
+        use_riekf = False,
+        input_3 = False,
     ):
 
         config_from_network = dotdict({})
@@ -136,7 +141,13 @@ class ImuTracker:
         self.next_interp_t_us = None
         self.next_aug_t_us = None
         self.has_done_first_update = False
-
+        
+        self.body_frame = body_frame
+        self.vio_path = vio_path
+        self.json_path = json_path
+        self.use_riekf = use_riekf
+        self.input_3 = input_3
+        
     @jit(forceobj=True, parallel=False, cache=False)
     def _get_imu_samples_for_network(self, t_begin_us, t_oldest_state_us, t_end_us):
         # extract corresponding network input data
@@ -147,44 +158,51 @@ class ImuTracker:
             net_tus_begin, net_tus_end
         )
 
+        # print(net_gyr.shape[0] , self.net_input_size)
         assert net_gyr.shape[0] == self.net_input_size
         assert net_acc.shape[0] == self.net_input_size
-        # get data from filter
-        R_oldest_state_wfb, _ = self.filter.get_past_state(t_oldest_state_us)  # 3 x 3
-        # change the input of the network to be in local frame
-        ri_z = compute_euler_from_matrix(R_oldest_state_wfb, "xyz", extrinsic=True)[
-            0, 2
-        ]
-        Ri_z = np.array(
-            [
-                [np.cos(ri_z), -(np.sin(ri_z)), 0],
-                [np.sin(ri_z), np.cos(ri_z), 0],
-                [0, 0, 1],
+        
+        net_gyr_w = net_gyr
+        net_acc_w = net_acc
+        
+        if not self.body_frame:
+            
+            # get data from filter
+            R_oldest_state_wfb, _ = self.filter.get_past_state(t_oldest_state_us)  # 3 x 3
+            # change the input of the network to be in local frame
+            ri_z = compute_euler_from_matrix(R_oldest_state_wfb, "xyz", extrinsic=True)[
+                0, 2
             ]
-        )
-        R_oldest_state_wfb = Ri_z.T @ R_oldest_state_wfb
+            Ri_z = np.array(
+                [
+                    [np.cos(ri_z), -(np.sin(ri_z)), 0],
+                    [np.sin(ri_z), np.cos(ri_z), 0],
+                    [0, 0, 1],
+                ]
+            )
+            R_oldest_state_wfb = Ri_z.T @ R_oldest_state_wfb
 
-        bg = self.filter.state.s_bg
-        # dynamic rotation integration using filter states
-        # Rs_net will contains delta rotation since t_begin_us
-        Rs_bofbi = np.zeros((net_tus.shape[0], 3, 3))  # N x 3 x 3
-        Rs_bofbi[0, :, :] = np.eye(3)
-        for j in range(1, net_tus.shape[0]):
-            dt_us = net_tus[j] - net_tus[j - 1]
-            dR = mat_exp((net_gyr[j, :].reshape((3, 1)) - bg) * dt_us * 1e-6)
-            Rs_bofbi[j, :, :] = Rs_bofbi[j - 1, :, :].dot(dR)
+            bg = self.filter.state.s_bg
+            # dynamic rotation integration using filter states
+            # Rs_net will contains delta rotation since t_begin_us
+            Rs_bofbi = np.zeros((net_tus.shape[0], 3, 3))  # N x 3 x 3
+            Rs_bofbi[0, :, :] = np.eye(3)
+            for j in range(1, net_tus.shape[0]):
+                dt_us = net_tus[j] - net_tus[j - 1]
+                dR = mat_exp((net_gyr[j, :].reshape((3, 1)) - bg) * dt_us * 1e-6)
+                Rs_bofbi[j, :, :] = Rs_bofbi[j - 1, :, :].dot(dR)
 
-        # find delta rotation index at time ts_oldest_state
-        oldest_state_idx_in_net = np.where(net_tus == t_oldest_state_us)[0][0]
+            # find delta rotation index at time ts_oldest_state
+            oldest_state_idx_in_net = np.where(net_tus == t_oldest_state_us)[0][0]
 
-        # rotate all Rs_net so that (R_oldest_state_wfb @ (Rs_bofbi[idx].inv() @ Rs_bofbi[i])
-        # so that Rs_net[idx] = R_oldest_state_wfb
-        R_bofboldstate = (
-            R_oldest_state_wfb @ Rs_bofbi[oldest_state_idx_in_net, :, :].T
-        )  # [3 x 3]
-        Rs_net_wfb = np.einsum("ip,tpj->tij", R_bofboldstate, Rs_bofbi)
-        net_acc_w = np.einsum("tij,tj->ti", Rs_net_wfb, net_acc)  # N x 3
-        net_gyr_w = np.einsum("tij,tj->ti", Rs_net_wfb, net_gyr)  # N x 3
+            # rotate all Rs_net so that (R_oldest_state_wfb @ (Rs_bofbi[idx].inv() @ Rs_bofbi[i])
+            # so that Rs_net[idx] = R_oldest_state_wfb
+            R_bofboldstate = (
+                R_oldest_state_wfb @ Rs_bofbi[oldest_state_idx_in_net, :, :].T
+            )  # [3 x 3]
+            Rs_net_wfb = np.einsum("ip,tpj->tij", R_bofboldstate, Rs_bofbi)
+            net_acc_w = np.einsum("tij,tj->ti", Rs_net_wfb, net_acc)  # N x 3
+            net_gyr_w = np.einsum("tij,tj->ti", Rs_net_wfb, net_gyr)  # N x 3
 
         return net_gyr_w, net_acc_w
 
@@ -228,7 +246,7 @@ class ImuTracker:
             init_bg,
             init_ba,
         ) = self._compensate_measurement_with_initial_calibration(gyr_raw, acc_raw)
-        self.filter.initialize_with_state(t_us, R, v, p, init_ba, init_bg)
+        self.filter.initialize_with_state(t_us, R, v, p, init_ba, init_bg, self.use_riekf)
         self._after_filter_init_member_setup(t_us, gyr_biascpst, acc_biascpst)
         return False
 
@@ -241,7 +259,7 @@ class ImuTracker:
             init_bg,
             init_ba,
         ) = self._compensate_measurement_with_initial_calibration(gyr_raw, acc_raw)
-        self.filter.initialize(t_us, acc_biascpst, init_ba, init_bg)
+        self.filter.initialize(t_us, acc_biascpst, init_ba, init_bg, self.use_riekf)
         self._after_filter_init_member_setup(t_us, gyr_biascpst, acc_biascpst)
 
     def on_imu_measurement(self, t_us, gyr_raw, acc_raw):
@@ -282,32 +300,45 @@ class ImuTracker:
 
         # decide if we need to interpolate imu data or do update
         do_interpolation_of_imu = t_us >= self.next_interp_t_us
+        
+        # if not self.use_riekf : 
         do_augmentation_and_update = t_us >= self.next_aug_t_us
 
-        # if augmenting the state, check that we compute interpolated measurement also
-        assert (
-            do_augmentation_and_update and do_interpolation_of_imu
-        ) or not do_augmentation_and_update, (
-            "Augmentation and interpolation does not match!"
-        )
+        # # if augmenting the state, check that we compute interpolated measurement also
+        # assert (
+        #     do_augmentation_and_update and do_interpolation_of_imu
+        # ) or not do_augmentation_and_update, (
+        #     "Augmentation and interpolation does not match!"
+        # )
 
         # augmentation propagation / propagation
         # propagate at IMU input rate, augmentation propagation depends on t_augmentation_us
-        t_augmentation_us = self.next_aug_t_us if do_augmentation_and_update else None
+        if not self.use_riekf : 
+            t_augmentation_us = self.next_aug_t_us if do_augmentation_and_update else None
 
         # IMU interpolation and data saving for network (using compensated IMU)
         if do_interpolation_of_imu:
             self._add_interpolated_imu_to_buffer(acc_biascpst, gyr_biascpst, t_us)
-
-        self.filter.propagate(
-            acc_raw, gyr_raw, t_us, t_augmentation_us=t_augmentation_us
-        )
+        
+        if not self.use_riekf : 
+            self.filter.propagate(
+                acc_raw, gyr_raw, t_us, t_augmentation_us=t_augmentation_us
+            )
+        else:
+            self.filter.propagate_riekf(
+                acc_raw, gyr_raw, t_us
+            )
         # filter update
         did_update = False
-        if do_augmentation_and_update:
-            did_update = self._process_update(t_us)
-            # plan next update/augmentation of state
-            self.next_aug_t_us += self.dt_update_us
+        if not self.use_riekf :
+            if do_augmentation_and_update:
+                did_update = self._process_update(t_us)
+                # plan next update/augmentation of state
+                self.next_aug_t_us += self.dt_update_us
+        else:
+            if do_augmentation_and_update:
+                did_update = self._process_update_riekf(t_us)   
+                self.next_aug_t_us += self.dt_update_us
 
         # set last value memory to the current one
         self.last_t_us = t_us
@@ -319,6 +350,99 @@ class ImuTracker:
 
         return did_update
 
+    def _process_update_riekf(self, t_us):
+        logging.debug(f"Upd. @ {t_us * 1e-6} | Ns: {self.filter.state.N} ")
+        # get update interval t_begin_us and t_end_us
+        # if self.filter.state.N <= self.update_distance_num_clone:
+        #     return False
+        
+        t_begin_us = t_us - 1000000
+        t_end_us = t_us
+        # t_begin_us = t_us + 99000
+        # t_end_us = t_us + 1000000 + 99000
+        t_oldest_state_us = t_begin_us
+        
+        # t_oldest_state_us = self.filter.state.si_timestamps_us[
+        #     self.filter.state.N - self.update_distance_num_clone - 1
+        # ]
+        # t_begin_us = t_oldest_state_us - self.dt_interp_us * self.past_data_size
+        # t_end_us = self.filter.state.si_timestamps_us[-1]  # always the last state
+        
+        # If we do not have enough IMU data yet, just wait for next time
+        # print(self.imu_buffer.net_t_us[0], self.imu_buffer.net_t_us[-1], self.imu_buffer.net_t_us.shape)
+        # print(t_begin_us, t_end_us)
+        # print(t_end_us < self.imu_buffer.net_t_us[0])
+        
+        # if t_begin_us < self.imu_buffer.net_t_us[0] or self.imu_buffer.net_t_us[-1] - self.imu_buffer.net_t_us[0] < 1100000 or self.imu_buffer.net_t_us[-1] < t_end_us:
+        if t_begin_us < self.imu_buffer.net_t_us[0]:
+        # if t_end_us > self.imu_buffer.net_t_us[-1]:
+            return False
+        # initialize with vio at the first update
+        if not self.has_done_first_update and self.callback_first_update:
+            self.callback_first_update(self)
+        assert t_begin_us <= t_oldest_state_us
+        if self.debug_callback_get_meas:
+            meas, meas_cov = self.debug_callback_get_meas(t_oldest_state_us, t_end_us)
+        else:  # using network for measurements
+            with open(self.json_path, 'r') as f:
+                data_json = json.load(f)
+            t_start_us1 = data_json["t_start_us"]
+            t_end_us1 = data_json["t_end_us"]
+            net_gyr_w, net_acc_w = self._get_imu_samples_for_network(
+                t_begin_us, t_oldest_state_us, t_end_us
+            )
+            
+            if self.input_3:
+                
+                num_data = net_gyr_w.shape[0]
+                net_vel_body = np.empty((0, 3))
+                
+                vio_data = np.load(self.vio_path)
+                ts_data = np.array(self.filter.state.si_timestamps_us)
+                v_data = np.squeeze(np.array(self.filter.state.si_vs))
+                
+                for i in range(num_data): 
+                    timestamp = t_begin_us + 5000*i
+                    if ts_data.size < 2 or v_data.shape[0] < 1000:
+                        index = round(vio_data[:, 0].shape[0] * ((timestamp - t_start_us1) / (t_end_us1 - t_start_us1)))
+                        if index >= len(vio_data):
+                            v_past2 = vio_data[-1,-3:]  # using imu0_resampled.npy
+                        else:
+                            v_past2 = vio_data[index,-3:]  # using imu0_resampled.npy
+                        v_at_timestamp_bd = v_past2
+                    else:
+                        # print("i :  ", i)
+                        v_at_timestamp = v_data[5*(-200+i), :]
+                        v_at_timestamp_bd = v_at_timestamp
+                        
+                    net_vel_body = np.vstack((net_vel_body, v_at_timestamp_bd.reshape(3)))
+            else:
+                net_vel_body = None                        
+                
+            meas, meas_cov = self.meas_source.get_displacement_measurement(
+                net_gyr_w, net_acc_w, net_vel_body, self.input_3
+            )
+        # filter update
+        self.filter.update_riekf(meas, meas_cov, t_oldest_state_us, t_end_us)
+        self.has_done_first_update = True
+        # marginalization of all past state with timestamp before or equal ts_oldest_state
+
+        
+        # Get the index of the closest timestamp
+        # print(" self.filter.state.si_timestamps_us.index : ", self.filter.state.si_timestamps_us)
+        # oldest_idx = self.filter.state.si_timestamps_us.index(t_oldest_state_us)
+        # oldest_idx = self.filter.state.si_timestamps_us.index(1659265477)
+        # timestamps_array = np.array(self.filter.state.si_timestamps_us)
+        # differences = np.abs(timestamps_array - t_oldest_state_us)
+        # oldest_idx = np.argmin(differences)
+        
+        # cut_idx = oldest_idx
+        # logging.debug(f"marginalize {cut_idx}")
+        # self.filter.marginalize(cut_idx)
+        
+        self.imu_buffer.throw_data_before(t_begin_us)
+        return True
+    
     def _process_update(self, t_us):
         logging.debug(f"Upd. @ {t_us * 1e-6} | Ns: {self.filter.state.N} ")
         # get update interval t_begin_us and t_end_us
@@ -329,6 +453,15 @@ class ImuTracker:
         ]
         t_begin_us = t_oldest_state_us - self.dt_interp_us * self.past_data_size
         t_end_us = self.filter.state.si_timestamps_us[-1]  # always the last state
+        
+        # print("t_begin_us : ", t_begin_us, t_end_us - t_begin_us)
+        
+        # print(self.imu_buffer.net_t_us[0], self.imu_buffer.net_t_us[-1], self.imu_buffer.net_t_us.shape)
+        # print(t_begin_us, t_end_us)
+        # 3436084207 3437184207 (221,)
+        # 3436184207 3437184207
+        # assert False
+        
         # If we do not have enough IMU data yet, just wait for next time
         if t_begin_us < self.imu_buffer.net_t_us[0]:
             return False

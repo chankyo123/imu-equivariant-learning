@@ -269,7 +269,7 @@ class MemMappedSequencesDataset(Dataset, SequencesDataset):
             ts = ts[:new_len]
         return ts
 
-    def get_gt_traj_center_window_times(self, seq_idx=0):
+    def get_gt_traj_center_window_times(self, body_frame= False, seq_idx=0):
         """
         Get the GT orientatoin/position (in world frame) at the center 
         time for each IMU window in this sequence.
@@ -291,11 +291,18 @@ class MemMappedSequencesDataset(Dataset, SequencesDataset):
 
         start_idx = (self.genparams.window_size - 1) // 2
         end = len(fp) - self.genparams.window_size//2
-        traj = fp[start_idx:end:self.genparams.decimator,-10:-3] # [start:stop:step]
+        if body_frame:
+            traj = fp[start_idx:end:self.genparams.decimator,-10:] # [start:stop:step], [ qxyzw_World_Device, pos_World_Device, vel_Body]
+        else:
+            traj = fp[start_idx:end:self.genparams.decimator,-10:-3] # [start:stop:step]
+            
         if not self.use_index_map: # off-by-one sometimes between these two options
             #new_len = (len(fp) - self.genparams.window_size + 1) // self.genparams.decimator
             new_len = self.list_cumsum[seq_idx] - (self.list_cumsum[seq_idx-1] if seq_idx!=0 else 0)
             assert abs(new_len - len(traj)) < 2, \
                     f"Expected off-by-one at most, but got {abs(new_len - len(traj))}"
             traj = traj[:new_len]
-        return Rotation.from_quat(traj[:,:4]), traj[:,4:]
+        if body_frame: 
+            return Rotation.from_quat(traj[:,:4]), traj[:,4:7], traj[:,7:] 
+        else:
+            return Rotation.from_quat(traj[:,:4]), traj[:,4:]

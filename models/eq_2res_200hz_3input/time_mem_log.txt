@@ -1,0 +1,2 @@
+Epoch 99: 633.8569 seconds, 3.584GB
+Mean Epoch Time: 618.4938 seconds, 3.567GB

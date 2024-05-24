@@ -55,7 +55,13 @@ if __name__ == "__main__":
 
     # ----------------------- filter params -----------------------
     filter_group = parser.add_argument_group("filter tuning:")
-
+    
+    filter_group.add_argument("--body_frame", type=str, default=False)  
+    filter_group.add_argument("--use_riekf", type=str, default=False)  
+    filter_group.add_argument("--input_3", type=str, default=False)  
+    filter_group.add_argument("--use_const_cov", type=str, default=False)
+    
+    
     filter_group.add_argument("--update_freq", type=float, default=20.0)  # (Hz)
 
     filter_group.add_argument(
@@ -101,7 +107,6 @@ if __name__ == "__main__":
     # ----------------------- debug params -----------------------
     debug_groups = parser.add_argument_group("debug")
     # covariance alternatives (note: if use_vio_meas is true, meas constant with default value 1e-4)
-    add_bool_arg(debug_groups, "use_const_cov", default=False)
     debug_groups.add_argument(
         "--const_cov_val_x", type=float, default=np.power(0.1, 2.0)
     )

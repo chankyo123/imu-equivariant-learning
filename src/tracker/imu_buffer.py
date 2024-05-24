@@ -60,8 +60,15 @@ class ImuBuffer:
         """ This returns all the data from ts_begin to ts_end """
         assert isinstance(t_begin_us, int)
         assert isinstance(t_us_end, int)
-        begin_idx = np.where(self.net_t_us == t_begin_us)[0][0]
-        end_idx = np.where(self.net_t_us == t_us_end)[0][0]
+        
+        # begin_idx = np.where(self.net_t_us == t_begin_us)[0][0]
+        # end_idx = np.where(self.net_t_us == t_us_end)[0][0]
+        abs_diff = np.abs(self.net_t_us - t_begin_us)
+        begin_idx = np.argmin(abs_diff)
+        end_idx = begin_idx + 199
+        # print(t_begin_us * 1e-6, begin_idx, self.net_t_us.shape[0])
+        # assert False
+        
         net_acc = self.net_acc[begin_idx : end_idx + 1, :]
         net_gyr = self.net_gyr[begin_idx : end_idx + 1, :]
         net_t_us = self.net_t_us[begin_idx : end_idx + 1]
@@ -71,7 +78,10 @@ class ImuBuffer:
         """ throw away data with timestamp before ts_begin
         """
         assert isinstance(t_begin_us, int)
-        begin_idx = np.where(self.net_t_us == t_begin_us)[0][0]
+        # begin_idx = np.where(self.net_t_us == t_begin_us)[0][0]
+        abs_diff = np.abs(self.net_t_us - t_begin_us)
+        begin_idx = np.argmin(abs_diff)
+        
         self.net_acc = self.net_acc[begin_idx:, :]
         self.net_gyr = self.net_gyr[begin_idx:, :]
         self.net_t_us = self.net_t_us[begin_idx:]

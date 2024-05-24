@@ -25,13 +25,14 @@ def torch_to_numpy(torch_arr):
     return torch_arr.cpu().detach().numpy()
 
 
-def get_inference(network, data_loader, device, epoch, transforms=[]):
+def get_inference(network, data_loader, device, epoch, body_frame_3regress = False, body_frame = False, transforms=[]):
     """
     Obtain attributes from a data loader given a network state
     Outputs all targets, predicts, predicted covariance params, and losses in numpy arrays
     Enumerates the whole data loader
     """
     targets_all, preds_all, preds_cov_all, losses_all = [], [], [], []
+    targets_vel_all, preds_vel_all = [], []
     network.eval()
 
     for bid, sample in enumerate(data_loader):
@@ -39,40 +40,60 @@ def get_inference(network, data_loader, device, epoch, transforms=[]):
         for transform in transforms:
             sample = transform(sample)
         feat = sample["feats"]["imu0"]
-        pred, pred_cov = network(feat)
+        if body_frame_3regress: 
+            pred, pred_cov, pred_vel = network(feat)
+            # print(feat.shape, pred.shape, pred_cov.shape)
+        else:
+            pred, pred_cov = network(feat)
+            pred_vel = torch.tensor([1]).to('cuda')
         
         if len(pred.shape) == 2:
             targ = sample["targ_dt_World"][:,-1,:]
+            if body_frame: 
+                targ_vel = sample["vel_Body"][:,-1,:]
+            else:
+                targ_vel = sample["vel_World"][:,-1,:]
         else:
             # Leave off zeroth element since it's 0's. Ex: Net predicts 199 if there's 200 GT
             targ = sample["targ_dt_World"][:,1:,:].permute(0,2,1)
 
-        loss = get_loss(pred, pred_cov, targ, epoch)
+        if body_frame_3regress: 
+            loss = get_loss(pred_vel, pred_cov, targ_vel, epoch, body_frame_3regress)
+        else:
+            loss = get_loss(pred, pred_cov, targ, epoch, body_frame_3regress)
 
         targets_all.append(torch_to_numpy(targ))
         preds_all.append(torch_to_numpy(pred))
         preds_cov_all.append(torch_to_numpy(pred_cov))
+        targets_vel_all.append(torch_to_numpy(targ_vel))
+        preds_vel_all.append(torch_to_numpy(pred_vel))
+        
         losses_all.append(torch_to_numpy(loss))
 
     targets_all = np.concatenate(targets_all, axis=0)
     preds_all = np.concatenate(preds_all, axis=0)
     preds_cov_all = np.concatenate(preds_cov_all, axis=0)
     losses_all = np.concatenate(losses_all, axis=0)
+    targets_vel_all = np.concatenate(targets_vel_all, axis=0)
+    preds_vel_all = np.concatenate(preds_vel_all, axis=0)
     attr_dict = {
         "targets": targets_all,
         "preds": preds_all,
         "preds_cov": preds_cov_all,
         "losses": losses_all,
+        "targets_vel": targets_vel_all,
+        "preds_vel": preds_vel_all,
     }
     return attr_dict
 
 
-def do_train(network, train_loader, device, epoch, optimizer, transforms=[]):
+def do_train(network, train_loader, device, epoch, optimizer, transforms=[], body_frame_3regress = False, body_frame = False):
     """
     Train network for one epoch using a specified data loader
     Outputs all targets, predicts, predicted covariance params, and losses in numpy arrays
     """
     train_targets, train_preds, train_preds_cov, train_losses = [], [], [], []
+    train_targets_vel, train_preds_vel  = [], []
     network.train()
 
     #for bid, (feat, targ, _, _) in enumerate(train_loader):
@@ -103,7 +124,11 @@ def do_train(network, train_loader, device, epoch, optimizer, transforms=[]):
         # feat_rot = torch.cat((rotated_accelerometer_data, rotated_gyroscope_data), dim=1)
         # # <<< SO(3) Equivariance Check
         
-        pred, pred_cov = network(feat)
+        if body_frame_3regress: 
+            pred, pred_cov, pred_vel = network(feat)
+        else:
+            pred, pred_cov= network(feat)
+            pred_vel = torch.tensor([1]).to('cuda')
 
         # pred_rot, pred_cov_rot = network(feat_rot)
         # print(torch.matmul(pred,rotation_matrix)[:3,:3])
@@ -112,16 +137,25 @@ def do_train(network, train_loader, device, epoch, optimizer, transforms=[]):
 
         if len(pred.shape) == 2:
             targ = sample["targ_dt_World"][:,-1,:]
+            if body_frame:
+                targ_vel = sample["vel_Body"][:,-1,:]
+            else:
+                targ_vel = sample["vel_World"][:,-1,:]
         else:
             # Leave off zeroth element since it's 0's. Ex: Net predicts 199 if there's 200 GT
             targ = sample["targ_dt_World"][:,1:,:].permute(0,2,1)
 
-        loss = get_loss(pred, pred_cov, targ, epoch)
+        if body_frame_3regress: 
+            loss = get_loss(pred_vel, pred_cov, targ_vel, epoch, body_frame_3regress)
+        else:
+            loss = get_loss(pred, pred_cov, targ, epoch, False)
 
         train_targets.append(torch_to_numpy(targ))
         train_preds.append(torch_to_numpy(pred))
         train_preds_cov.append(torch_to_numpy(pred_cov))
         train_losses.append(torch_to_numpy(loss))
+        train_targets_vel.append(torch_to_numpy(targ_vel))
+        train_preds_vel.append(torch_to_numpy(pred_vel))
             
         #print("Loss full: ", loss)
 
@@ -142,11 +176,15 @@ def do_train(network, train_loader, device, epoch, optimizer, transforms=[]):
     train_preds = np.concatenate(train_preds, axis=0)
     train_preds_cov = np.concatenate(train_preds_cov, axis=0)
     train_losses = np.concatenate(train_losses, axis=0)
+    train_targets_vel = np.concatenate(train_targets_vel, axis=0)
+    train_preds_vel = np.concatenate(train_preds_vel, axis=0)
     train_attr_dict = {
         "targets": train_targets,
         "preds": train_preds,
         "preds_cov": train_preds_cov,
         "losses": train_losses,
+        "targets_vel": train_targets_vel,
+        "preds_vel": train_preds_vel,
     }
     return train_attr_dict
 
@@ -327,6 +365,14 @@ def net_train(args):
     train_loader = data.train_dataloader()
     train_transforms = data.get_train_transforms()
 
+    #train (world/bodyframe) imu data
+    body_frame = True
+    body_frame_3regress = True
+    if not body_frame: 
+        train_transforms = data.get_train_transforms()
+    else:
+        train_transforms = data.get_train_transforms_bodyframe()
+        
     end_t = time.time()
     logging.info(f"Training set loaded. Loading time: {end_t - start_t:.3f}s")
     logging.info(f"Number of train samples: {len(data.train_dataset)}")
@@ -413,7 +459,7 @@ def net_train(args):
 
         logging.info(f"-------------- Training, Epoch {epoch} ---------------")
         start_t = time.time()
-        train_attr_dict = do_train(network, train_loader, device, epoch, optimizer, train_transforms)
+        train_attr_dict = do_train(network, train_loader, device, epoch, optimizer, train_transforms, body_frame_3regress, body_frame)
         mem_used_max_GB = torch.cuda.max_memory_allocated() / (1024*1024*1024)
         torch.cuda.reset_peak_memory_stats()
         mem_str = f'GPU Mem: {mem_used_max_GB:.3f}GB'
@@ -430,7 +476,7 @@ def net_train(args):
         consumed_times.append(end_t - start_t)    
             
         if val_loader is not None:
-            val_attr_dict = get_inference(network, val_loader, device, epoch)
+            val_attr_dict = get_inference(network, val_loader, device, epoch, body_frame_3regress, body_frame)
             write_summary(summary_writer, val_attr_dict, epoch, optimizer, "val")
             if np.mean(val_attr_dict["losses"]) < best_val_loss:
                 best_val_loss = np.mean(val_attr_dict["losses"])

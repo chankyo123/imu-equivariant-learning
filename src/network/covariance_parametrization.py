@@ -20,21 +20,40 @@ class BaseParams(ABC):
         Returns:
             err [n x 1] : mahalanobis distance square
         """
+        device = mean.device
         cov_matrix = cls.vec2Cov(pred_cov)
         # compute the inverse of covariance matrices
-        CovInv = torch.zeros_like(cov_matrix)
+        CovInv = torch.zeros_like(cov_matrix).to(device)
         N = target.shape[0]
+        
+        # 1. Naive Method
         for i in range(N):
-            u = torch.cholesky(cov_matrix[i, :, :])
+            # u = torch.cholesky(cov_matrix[i, :, :])
+            # u = torch.linalg.cholesky(cov_matrix[i, :, :])
+            try : 
+                u = torch.linalg.cholesky(cov_matrix[i, :, :])
+            except torch._C._LinAlgError:
+                eigenvalues = torch.linalg.eigvalsh(cov_matrix[i, :, :])
+                is_non_negative = torch.all(eigenvalues >= 0)
+                print(eigenvalues[eigenvalues < 0]) if not is_non_negative else None
+                
             CovInv[i, :, :] = torch.cholesky_inverse(u)
+        # 1. Naive Method
+        
+        #  2. Vectorize
+        # u = torch.linalg.cholesky(cov_matrix)
+        # CovInv = torch.cholesky_inverse(u)
+        # print('value check :', CovInv[2,:,:]-CovInv2[2,:,:])
+        #  2. Vectorize
+        
 
         # compute the error
         err = mean - target
         loss_part1 = torch.einsum("ki,kij,kj->k", err, CovInv, err)
         if clamp_covariance:
-            loss_part2 = torch.log(cov_matrix.det().clamp(min=1e-10))
+            loss_part2 = torch.log(cov_matrix.det().clamp(min=1e-10)).to(device)
         else:
-            loss_part2 = torch.logdet(cov_matrix)
+            loss_part2 = torch.logdet(cov_matrix).to(device)
 
         loss = loss_part1 + loss_part2
         return loss.reshape((N, -1))
@@ -170,7 +189,7 @@ class SinhParam(BaseParams):
         """
         assert p.shape[1] == cls.covParamNumber
         N = p.shape[0]
-        covf = torch.zeros((N, 9))
+        covf = torch.zeros((N, 9)).to(p.device)
         # on diagonal terms
         covf[:, 0] = torch.exp(2 * p[:, 0])
         covf[:, 4] = torch.exp(2 * p[:, 1])
@@ -185,3 +204,32 @@ class SinhParam(BaseParams):
         covf[:, 7] = covf[:, 5]  # yz
 
         return covf.reshape((N, 3, 3))
+
+
+class CovarianceParam(BaseParams):
+    """
+    This class represents the covariance parameterization where the input for pred_logstd
+    is in the complete n*3*3 covariance matrix format.
+    """
+
+    covParamNumber = 9  # Assuming pred_logstd has 9 parameters for the complete covariance matrix
+
+    @classmethod
+    def vec2Cov(cls, p):
+        """
+        Convert the parameter vector p to the covariance matrix format.
+
+        Args:
+            p (torch.Tensor): Parameter vector of shape (n, 9) representing the complete covariance matrix.
+
+        Returns:
+            cov (torch.Tensor): Covariance matrix of shape (n, 3, 3).
+        """
+        assert p.shape[1] *  p.shape[2] == cls.covParamNumber, "Incorrect number of parameters for covariance matrix"
+        # N = p.shape[0]
+
+        # # Reshape parameter vector to covariance matrix format
+        # cov = p.reshape((N, 3, 3))
+        cov = p
+
+        return cov

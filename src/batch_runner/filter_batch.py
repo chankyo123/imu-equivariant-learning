@@ -30,7 +30,30 @@ if __name__ == "__main__":
         default=f"./all_output/",
         help="Path to dataset directory",
     )
-
+    io_groups.add_argument(
+        "--body_frame",
+        type=str,
+        default=f"False",
+        help="Use Body frame or World frame for network",
+    )
+    io_groups.add_argument(
+        "--use_riekf",
+        type=str,
+        default=f"False",
+        help="Use RIEKF or EKF for the filter",
+    )
+    io_groups.add_argument(
+        "--input_3",
+        type=str,
+        default=f"False",
+        help="Use additional velocity for network input",
+    )
+    io_groups.add_argument(
+        "--use_const_cov",
+        type=str,
+        default=f"False",
+        help="Use Fixed Covariance or from Network",
+    )
     args = parser.parse_args()
 
     all_models = list(Path.cwd().glob(args.model_globbing))
@@ -38,7 +61,7 @@ if __name__ == "__main__":
     logging.info(f"Found {len(all_models)} models")
     logging.info(f"Found {all_models}")
 
-    update_frequency_list = [20]
+    update_frequency_list = [10]
     for update_frequency in update_frequency_list:
         try:
             os.mkdir(f"./{args.out_dir}_uf{update_frequency}")
@@ -73,6 +96,14 @@ if __name__ == "__main__":
                 "--initialize_with_offline_calib",
                 "--update_freq",
                 f"{update_frequency}",
+                "--body_frame",
+                f"{args.body_frame}",
+                "--use_riekf",
+                f"{args.use_riekf}",
+                "--input_3",
+                f"{args.input_3}",
+                "--use_const_cov",
+                f"{args.use_const_cov}",
             ]
             logging.info(" ".join(command))
             try:

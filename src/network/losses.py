@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from network.covariance_parametrization import DiagonalParam
+from network.covariance_parametrization import DiagonalParam, CovarianceParam, PearsonParam, SinhParam
 
 MIN_LOG_STD = np.log(1e-3)
 
@@ -37,7 +37,12 @@ pred_logstd:(Nx3) u = [log(sigma_x) log(sigma_y) log(sigma_z)]
 
 
 def loss_distribution_diag(pred, pred_logstd, targ):
+    # min_value = -10.0  # Example minimum value
+    # max_value = 10.0   # Example maximum value
 
+    # # Clamp pred_logstd
+    # clamped_pred_logstd = torch.clamp(pred_logstd, min=min_value, max=max_value)
+    # print()
     pred_logstd = torch.maximum(pred_logstd, MIN_LOG_STD * torch.ones_like(pred_logstd))
     loss = ((pred - targ).pow(2)) / (2 * torch.exp(2 * pred_logstd)) + pred_logstd
     return loss
@@ -64,10 +69,21 @@ FunStuff
 """
 
 
-def criterion_distribution(pred, pred_logstd, targ):
-    loss = DiagonalParam.toMahalanobisDistance(
-        targ, pred, pred_logstd, clamp_logstdariance=False
-    )
+def criterion_distribution(pred, covariance, targ, use_DiagonalParam):
+    if use_DiagonalParam == 1: 
+      loss = DiagonalParam.toMahalanobisDistance(
+          targ, pred, covariance, clamp_covariance=False
+      )
+    elif use_DiagonalParam == 2 :
+      loss = PearsonParam.toMahalanobisDistance(
+      # loss = SinhParam.toMahalanobisDistance(
+          targ, pred, covariance, clamp_covariance=False
+      )
+    elif use_DiagonalParam == 3 :
+      loss = CovarianceParam.toMahalanobisDistance(
+          targ, pred, covariance, clamp_covariance=False
+      )
+    return loss
 
 
 """
@@ -76,16 +92,28 @@ all variables on gpu
 output:
   loss: Nx3
 """
-def get_loss(pred, pred_logstd, targ, epoch):
+def get_loss(pred, pred_logstd, targ, epoch, body_frame_3regress = False):
     """
     if epoch < 10:
         loss = loss_mse(pred, targ)
     else:
         loss = loss_distribution_diag(pred, pred_logstd, targ)
     """
+    use_DiagonalParam = 1 # diagonal : 1, pearson : 2, or entire cov : 3
+    # if epoch < 10:
+    #     pred_logstd = pred_logstd.detach()
 
-    if epoch < 10:
-        pred_logstd = pred_logstd.detach()
+    if body_frame_3regress: 
+      # loss = criterion_distribution(pred, pred_logstd, targ, use_DiagonalParam)
+      loss = loss_mse(pred, targ)
+    else:
+      # if epoch < 10 or epoch > 90:
+      #   loss = loss_mse(pred, targ)
+        
+      # else: 
+      #   loss = loss_distribution_diag(pred, pred_logstd, targ)
+        
+      loss = loss_distribution_diag(pred, pred_logstd, targ)
+        
 
-    loss = loss_distribution_diag(pred, pred_logstd, targ)
     return loss

@@ -539,17 +539,17 @@ def run(args, dataset):
     metric_map["filter"]["angular_drift_deg_hour"] = (
         angular_drift_filter / ts.max() * 3600
     )
-    logging.info(f"drift of filter {metric_map['filter']['drift_ratio']}")
-    logging.info(f"ATE of filter {metric_map['filter']['ate']}")
-    logging.info(f"Mean Heading error of filter {metric_map['filter']['mhe']}")
+    # logging.info(f"drift of filter {metric_map['filter']['drift_ratio']}")
+    # logging.info(f"ATE of filter {metric_map['filter']['ate']}")
+    # logging.info(f"Mean Heading error of filter {metric_map['filter']['mhe']}")
 
     def compute_rpe_filter(ns_rpe):
         rpe_rmse, rpe_rmse_z, relative_yaw_rmse = compute_rpe(
             ns_rpe, ps_filter, ps_gt, euls_filter[:, [2]], euls_gt[:, [2]]
         )
-        logging.info(f"RPE RMSE of filter over {ns_rpe}s: {rpe_rmse}")
-        logging.info(f"RPE RMSE Z of filter over {ns_rpe}s: {rpe_rmse_z}")
-        logging.info(f"RPE RMSE Yaw of filter over {ns_rpe}s: {relative_yaw_rmse}")
+        # logging.info(f"RPE RMSE of filter over {ns_rpe}s: {rpe_rmse}")
+        # logging.info(f"RPE RMSE Z of filter over {ns_rpe}s: {rpe_rmse_z}")
+        # logging.info(f"RPE RMSE Yaw of filter over {ns_rpe}s: {relative_yaw_rmse}")
         metric_map["filter"]["rpe_rmse_" + str(ns_rpe)] = rpe_rmse
         metric_map["filter"]["rpe_rmse_z_" + str(ns_rpe)] = rpe_rmse_z
         metric_map["filter"]["relative_yaw_rmse_" + str(ns_rpe)] = relative_yaw_rmse
@@ -583,17 +583,17 @@ def run(args, dataset):
         metric_map["ronin"]["angular_drift_deg_hour"] = (
             angular_drift_ronin / ts.max() * 3600
         )
-        logging.info(f"drift of ronin {metric_map['ronin']['drift_ratio']}")
-        logging.info(f"ATE of ronin {metric_map['ronin']['ate']}")
-        logging.info(f"Mean Heading error of ronin {metric_map['ronin']['mhe']}")
+        # logging.info(f"drift of ronin {metric_map['ronin']['drift_ratio']}")
+        # logging.info(f"ATE of ronin {metric_map['ronin']['ate']}")
+        # logging.info(f"Mean Heading error of ronin {metric_map['ronin']['mhe']}")
 
         def compute_rpe_ronin(ns_rpe):
             rpe_rmse, rpe_rmse_z, relative_yaw_rmse = compute_rpe(
                 ns_rpe, ps_ronin, ps_gt, euls_aekf[:, [2]], euls_gt[:, [2]]
             )
-            logging.info(f"RPE RMSE of ronin over 1s: {rpe_rmse}")
-            logging.info(f"RPE RMSE Z of ronin over 1s: {rpe_rmse_z}")
-            logging.info(f"RPE RMSE Yaw of ronin over 1s: {relative_yaw_rmse}")
+            # logging.info(f"RPE RMSE of ronin over 1s: {rpe_rmse}")
+            # logging.info(f"RPE RMSE Z of ronin over 1s: {rpe_rmse_z}")
+            # logging.info(f"RPE RMSE Yaw of ronin over 1s: {relative_yaw_rmse}")
             metric_map["ronin"]["rpe_rmse_" + str(ns_rpe)] = rpe_rmse
             metric_map["ronin"]["rpe_rmse_z_" + str(ns_rpe)] = rpe_rmse_z
             metric_map["ronin"]["relative_yaw_rmse_" + str(ns_rpe)] = relative_yaw_rmse

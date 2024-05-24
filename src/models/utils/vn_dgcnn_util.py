@@ -126,14 +126,26 @@ def get_vector_feature(x):
     
     _, num_dims, _ = x.size()
     
-    num_dims = num_dims // 6  #for 6D imu
-
+    # div = 6 #for 6D imu
+    div = 9 #for 6D imu + vel_body
+    assert num_dims % div == 0, f"{num_dims} is not divisible by {div}"
+    num_dims = int(num_dims / div)
+    
     x_acc = x[:,:3,:].transpose(2,1).contiguous() 
-    x_ang = x[:,3:,:].transpose(2,1).contiguous() 
+    x_ang = x[:,3:6,:].transpose(2,1).contiguous() 
+    if div == 9:
+        x_vel_body = x[:,6:9,:].transpose(2,1).contiguous() 
     
     # feature = x.view(batch_size*num_points, -1)[idx, :]
     x_acc = x_acc.view(batch_size, num_points, num_dims, 3)
     x_ang = x_ang.view(batch_size, num_points, num_dims, 3)
+    if div == 9:
+        x_vel_body = x_vel_body.view(batch_size, num_points, num_dims, 3)
     
-    feature = torch.cat((x_acc, x_ang), dim=2).contiguous()   
+    if div == 6 :
+        feature = torch.cat((x_acc, x_ang), dim=2).contiguous()   
+    elif div == 9:
+        feature = torch.cat((x_acc, x_ang, x_vel_body), dim=2).contiguous()   
+    else:
+        assert div == 6 or div == 9
     return feature

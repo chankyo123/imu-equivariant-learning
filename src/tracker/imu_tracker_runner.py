@@ -13,6 +13,7 @@ from utils.o3d_visualizer import O3dVisualizer
 from utils.dotdict import dotdict
 from utils.logging import logging
 
+import re
 
 class ImuTrackerRunner:
     """
@@ -65,7 +66,6 @@ class ImuTrackerRunner:
                 "init_bg_sigma": args.init_bg_sigma,  # rad/s
                 "init_ba_sigma": args.init_ba_sigma,  # m/s^2
                 "meascov_scale": args.meascov_scale,
-                "use_const_cov": args.use_const_cov,
                 "const_cov_val_x": args.const_cov_val_x,  # sigma^2
                 "const_cov_val_y": args.const_cov_val_y,  # sigma^2
                 "const_cov_val_z": args.const_cov_val_z,  # sigma^2
@@ -73,9 +73,30 @@ class ImuTrackerRunner:
                 "sim_meas_cov_val": args.sim_meas_cov_val,
                 "sim_meas_cov_val_z": args.sim_meas_cov_val_z,
                 "mahalanobis_fail_scale": args.mahalanobis_fail_scale,
+                "use_const_cov": eval(args.use_const_cov),
             }
         )
 
+        match = re.search(r'/(\d{15,16})/', self.outfile)
+        if match:
+            extracted_string = match.group(1)
+            # print("Extracted string:", extracted_string)
+        else:
+            extracted_string = None
+            print("No match found")
+
+        replace_string = "./../local_data_bodyframe/tlio_golden/146734859523827/imu0_resampled.npy"
+        if extracted_string:
+            vio_path = re.sub(r'/\d{15,16}/', f'/{extracted_string}/', replace_string)
+            # print("Generated vio_path:", vio_path)
+        else:
+            print("Cannot generate vio_path as no extracted string was found")
+            
+        print("vio_path : ", vio_path)
+        print("extracted_substring : ", extracted_string)
+        json_path = os.path.join(args.root_dir, extracted_string + "/imu0_resampled_description.json")
+        print("json_path : ", json_path, " / body_frame : ", args.body_frame, "use_const_cov of TLIO : ", args.use_const_cov)
+        
         # ImuTracker object
         self.tracker = ImuTracker(
             model_path=args.model_path,
@@ -84,6 +105,11 @@ class ImuTrackerRunner:
             filter_tuning_cfg=filter_tuning,
             imu_calib=imu_calib,
             #force_cpu=True,
+            vio_path = vio_path,
+            json_path = json_path,
+            body_frame = eval(args.body_frame),
+            use_riekf = eval(args.use_riekf),
+            input_3 = eval(args.input_3),
         )
 
         # output
@@ -149,11 +175,11 @@ class ImuTrackerRunner:
             logging.info(
                 f"Initialize filter from vio state just after time {this.last_t_us*1e-6}"
             )
-            self.reset_filter_state_from_vio(this)
+            self.reset_filter_state_from_vio(this, args.input_3, args.use_riekf)
 
         def initialize_at_first_update(this):
             logging.info(f"Re-initialize filter at first update")
-            self.reset_filter_state_pv()
+            self.reset_filter_state_pv(args.input_3, args.use_riekf)
 
         if args.initialize_with_vio:
             self.tracker.callback_first_update = initialize_with_vio_at_first_update
@@ -247,38 +273,47 @@ class ImuTrackerRunner:
         )
         return acc_cal, gyr_cal
 
-    def reset_filter_state_from_vio(self, this: ImuTracker):
+    def reset_filter_state_from_vio(self, this: ImuTracker, input_3 = False, use_riekf = False):
         """ This reset the filter state from vio state as found in input """
         # compute from vio
         inp = self.input  # for convenience
         state = this.filter.state  # for convenience
         vio_ps = []
         vio_Rs = []
+        vio_vs = []
+        
         for i, t_init_us in enumerate(state.si_timestamps_us):
             t_init_s = t_init_us * 1e-6
             ps = np.atleast_2d(interp1d(inp.vio_ts, inp.vio_p, axis=0)(t_init_s)).T
             vio_ps.append(ps)
             vio_eul = interp1d(inp.vio_ts, inp.vio_eul, axis=0)(t_init_s)
             vio_Rs.append(Rotation.from_euler("xyz", vio_eul, degrees=True).as_matrix())
+            if input_3 or use_riekf:
+                vio_v = np.atleast_2d(interp1d(inp.vio_ts, inp.vio_v, axis=0)(t_init_s)).T
+                vio_vs.append(vio_v)  # Append velocity to the list
 
         ts = state.s_timestamp_us * 1e-6
         vio_p = np.atleast_2d(interp1d(inp.vio_ts, inp.vio_p, axis=0)(ts)).T
         vio_v = np.atleast_2d(interp1d(inp.vio_ts, inp.vio_v, axis=0)(ts)).T
         vio_eul = interp1d(inp.vio_ts, inp.vio_eul, axis=0)(ts)
         vio_R = Rotation.from_euler("xyz", vio_eul, degrees=True).as_matrix()
-
+        
         this.filter.reset_state_and_covariance(
-            vio_Rs, vio_ps, vio_R, vio_v, vio_p, state.s_ba, state.s_bg
+            vio_Rs, vio_ps, vio_vs, vio_R, vio_v, vio_p, state.s_ba, state.s_bg, use_riekf
+            # vio_Rs, vio_ps, vio_R, vio_v, vio_p, state.s_ba, state.s_bg
         )
 
-    def reset_filter_state_pv(self):
+    def reset_filter_state_pv(self, input_3 = False, use_riekf = False):
         """ Reset filter states p and v with zeros """
         state = self.tracker.filter.state
         ps = []
+        vs = []
         for i in state.si_timestamps_us:
             ps.append(np.zeros((3, 1)))
+            if input_3 or use_riekf:
+                vs.append(np.zeros((3, 1)))
         p = np.zeros((3, 1))
         v = np.zeros((3, 1))
         self.tracker.filter.reset_state_and_covariance(
-            state.si_Rs, ps, state.s_R, v, p, state.s_ba, state.s_bg
+            state.si_Rs, ps, vs, state.s_R, v, p, state.s_ba, state.s_bg, use_riekf
         )

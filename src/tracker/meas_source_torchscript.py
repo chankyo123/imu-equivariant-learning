@@ -27,18 +27,23 @@ class MeasSourceTorchScript:
         self.net.eval()
         logging.info("Model {} loaded to device {}.".format(model_path, self.device))
 
-    def get_displacement_measurement(self, net_gyr_w, net_acc_w, clip_small_disp=False):
+    def get_displacement_measurement(self, net_gyr_w, net_acc_w, net_vel_body = None, input_3 = False, clip_small_disp=False):
         with torch.no_grad():
-            features = np.concatenate([net_gyr_w, net_acc_w], axis=1)  # N x 6
+            if input_3 : 
+                features = np.concatenate([net_gyr_w, net_acc_w, net_vel_body], axis=1)  # N x 9
+            else:
+                features = np.concatenate([net_gyr_w, net_acc_w], axis=1)  # N x 6
             features_t = torch.unsqueeze(
                 torch.from_numpy(features.T).float().to(self.device), 0
-            )  # 1 x 6 x N
-            
+            )  # 1 x 6 or 9 x N
             netargs = [features_t]
             outputs = self.net(*netargs)
 
             if type(outputs) == tuple:  # Legacy
-                meas, meas_cov = outputs
+                if input_3: 
+                    a, meas_cov, meas = outputs
+                else:
+                    meas, meas_cov = outputs
             elif type(outputs) == dict:  # New output format
                 meas, meas_cov = outputs["pred"], outputs["pred_log_std"]
                 # If this is the case, the network predicts over the whole window at high frequency.

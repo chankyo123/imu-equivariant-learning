@@ -100,8 +100,8 @@ def get_loss(pred, pred_logstd, targ, epoch, body_frame_3regress = False):
         loss = loss_distribution_diag(pred, pred_logstd, targ)
     """
     use_DiagonalParam = 1 # diagonal : 1, pearson : 2, or entire cov : 3
-    # if epoch < 10:
-    #     pred_logstd = pred_logstd.detach()
+    if epoch < 10:
+        pred_logstd = pred_logstd.detach()
 
     if body_frame_3regress: 
       # loss = criterion_distribution(pred, pred_logstd, targ, use_DiagonalParam)

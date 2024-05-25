@@ -400,6 +400,9 @@ class ImuTracker:
                 vio_data = np.load(self.vio_path)
                 ts_data = np.array(self.filter.state.si_timestamps_us)
                 v_data = np.squeeze(np.array(self.filter.state.si_vs))
+                R_data = np.array(self.filter.state.si_Rs)
+                # print(R_data[-1], self.filter.state.s_R)
+                # assert False
                 
                 for i in range(num_data): 
                     timestamp = t_begin_us + 5000*i
@@ -422,6 +425,9 @@ class ImuTracker:
             meas, meas_cov = self.meas_source.get_displacement_measurement(
                 net_gyr_w, net_acc_w, net_vel_body, self.input_3
             )
+            
+        #for equiv-cov
+        # meas_cov = R_data[-1] @ meas_cov @ R_data[-1].T
         # filter update
         self.filter.update_riekf(meas, meas_cov, t_oldest_state_us, t_end_us)
         self.has_done_first_update = True

@@ -508,8 +508,13 @@ class ImuMSCKF:
         #     P = (Adj @ P @ Adj.T)
         
         
-        N = 1*np.eye(3)
+        # N = 3*np.eye(3)
+        # N = 1*np.eye(3)
+        N = 0.1*np.eye(3)
         # N = 0.01*np.eye(3)
+        
+        # N = self.meascov_scale * meas_cov
+        # print('N!!')
         # N = 0.001*np.eye(3)
         
         if self.use_const_cov:

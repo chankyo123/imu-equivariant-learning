@@ -14,9 +14,11 @@ def load_and_convert(args):
     disp_window_size = int(args.window_time * args.imu_freq_net)
 
     net_config = {"in_dim": (past_data_size + disp_window_size) // 32 + 1}
-
-    net = get_model(args.arch, net_config, 6, 3)
-
+    
+    # input_dim = 6 #6D IMU Input
+    input_dim = 9 #9D Input : 6D IMU Input + velocity input
+    net = get_model(args.arch, net_config, input_dim, 3)
+    
     # load trained network model
     if not torch.cuda.is_available() or args.cpu:
         device = torch.device("cpu")
@@ -24,14 +26,17 @@ def load_and_convert(args):
             args.model_path, map_location=lambda storage, location: storage
         )
     else:
-        device = torch.device("cuda:0")
+        device = torch.device("cuda")
         checkpoint = torch.load(args.model_path)
 
     net.load_state_dict(checkpoint["model_state_dict"])
     net.eval().to(device)
-    input_sequence_dim = past_data_size + disp_window_size
+    
+    # input_sequence_dim = past_data_size + disp_window_size
+    input_sequence_dim = 200 #200hz
+    # input_sequence_dim = 20 #20hz
 
-    traced_cell = torch.jit.trace(net, torch.zeros(1, 6, input_sequence_dim))
+    traced_cell = torch.jit.trace(net, torch.zeros(1, input_dim, input_sequence_dim).to(device))
     traced_cell.save(args.out_dir + "/model_torchscript.pt")
 
 
@@ -49,7 +54,7 @@ if __name__ == "__main__":
     io_groups.add_argument("--model_param_path", required=True, type=str, default=None)
     io_groups.add_argument("--out_dir", type=str, default="./")
 
-    parser.add_argument("--cpu", type=bool, default=True)
+    parser.add_argument("--cpu", type=bool, default=False)
     args = parser.parse_args()
 
     # overwrite network model parameter from json file if specified

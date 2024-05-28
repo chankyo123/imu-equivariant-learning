@@ -194,12 +194,12 @@ def compute_metrics_and_plotting(args, net_attr_dict, traj_attr_dict):
     metrics["ronin"]["mse_loss_y"] = float(mse_loss[1])
     metrics["ronin"]["mse_loss_z"] = float(mse_loss[2])
     metrics["ronin"]["mse_loss_avg"] = float(avg_mse_loss)
-    # metrics["ronin"]["likelihood_loss_x"] = float(likelihood_loss[0])
-    # metrics["ronin"]["likelihood_loss_y"] = float(likelihood_loss[1])
-    # metrics["ronin"]["likelihood_loss_z"] = float(likelihood_loss[2])
-    metrics["ronin"]["likelihood_loss_x"] = float(likelihood_loss)
-    metrics["ronin"]["likelihood_loss_y"] = float(likelihood_loss)
-    metrics["ronin"]["likelihood_loss_z"] = float(likelihood_loss)
+    metrics["ronin"]["likelihood_loss_x"] = float(likelihood_loss[0])
+    metrics["ronin"]["likelihood_loss_y"] = float(likelihood_loss[1])
+    metrics["ronin"]["likelihood_loss_z"] = float(likelihood_loss[2])
+    # metrics["ronin"]["likelihood_loss_x"] = float(likelihood_loss)
+    # metrics["ronin"]["likelihood_loss_y"] = float(likelihood_loss)
+    # metrics["ronin"]["likelihood_loss_z"] = float(likelihood_loss)
     metrics["ronin"]["likelihood_loss_avg"] = float(avg_likelihood_loss)
 
     """ ------------ Data for plotting ----------- """
@@ -219,6 +219,7 @@ def compute_metrics_and_plotting(args, net_attr_dict, traj_attr_dict):
         "rpes": rpes,
         "preds_vel": net_attr_dict["preds_vel"],
         "targets_vel": net_attr_dict["targets_vel"],
+        "preds_cov": net_attr_dict["preds_cov"],
     }
 
     return metrics, plot_dict
@@ -302,6 +303,7 @@ def make_plots(args, plot_dict, outdir, use_pred_vel):
     pred_sigmas = plot_dict["pred_sigmas"]
     preds_vel = plot_dict["preds_vel"]
     targets_vel = plot_dict["targets_vel"]
+    preds_cov = plot_dict["preds_cov"]
         
     rmse = plot_dict["rmse"]
     rpe_rmse = plot_dict["rpe_rmse"]
@@ -309,7 +311,43 @@ def make_plots(args, plot_dict, outdir, use_pred_vel):
 
     dpi = 90
     figsize = (16, 9)
+    
+    #plot vel-cov plot
+    fig0, axs = plt.subplots(3, 2, figsize=figsize, dpi=dpi)
+    # Extract necessary data
+    preds_vel = plot_dict["preds_vel"]
+    targets_vel = plot_dict["targets_vel"]
+    preds_cov = plot_dict["preds_cov"]
 
+    # Plot time vs velocity in the left column
+    for i, label in enumerate(["x", "y", "z"]):
+        # axs[i, 0].plot(preds_vel[:, i], color='red', label='Predicted')
+        # axs[i, 0].plot(targets_vel[:, i], color='blue', label='Ground truth')
+        axs[i, 0].plot(preds[:, i], color='red', label='Predicted')
+        axs[i, 0].plot(targets[:, i], color='blue', label='Ground truth')
+        
+        axs[i, 0].set_title(f"Velocity {label} vs Time")
+        axs[i, 0].set_xlabel("Time")
+        axs[i, 0].set_ylabel(f"Velocity {label}")
+        axs[i, 0].legend()
+        axs[i, 0].grid(True)
+
+    # Plot time vs covariance in the right column
+    for i, label in enumerate(["x", "y", "z"]):
+        axs[i, 1].plot(preds_cov[:, i], color='green', label='Covariance')
+        axs[i, 1].set_title(f"Covariance {label} vs Time")
+        axs[i, 1].set_xlabel("Time")
+        axs[i, 1].set_ylabel(f"Covariance {label}")
+        axs[i, 1].legend()
+        axs[i, 1].grid(True)
+
+    # Adjust layout
+    plt.tight_layout()
+
+    # Save the figure as a PNG file
+    fig0.savefig(osp.join(outdir, "vel_cov.png"))
+    print("fig0 saved!")
+    
     fig1 = plt.figure(num="prediction vs gt", dpi=dpi, figsize=figsize)
     if use_pred_vel: 
         targ_names = ["vel_x", "vel_y", "vel_z"]
@@ -491,10 +529,14 @@ def get_inference(network, data_loader, device, epoch, body_frame_3regress):
     
     targets_all = np.concatenate(targets_all, axis=0)
     preds_all = np.concatenate(preds_all, axis=0)
+    # print("preds_cov_all : ", len(preds_cov_all))
     preds_cov_all = np.concatenate(preds_cov_all, axis=0)
     losses_all = np.concatenate(losses_all, axis=0)
     targets_vel_all = np.concatenate(targets_vel_all, axis=0)
     preds_vel_all = np.concatenate(preds_vel_all, axis=0)
+    # print("preds_cov_all, np: ", preds_cov_all.shape)
+    # print("preds_vel_all, np: ", preds_vel_all.shape)
+    # assert False
     attr_dict = {
         "targets": targets_all,
         "preds": preds_all,
@@ -502,6 +544,7 @@ def get_inference(network, data_loader, device, epoch, body_frame_3regress):
         "losses": losses_all,
         "targets_vel": targets_vel_all,
         "preds_vel": preds_vel_all,
+        "preds_cov": preds_cov_all,
     }
     return attr_dict
 
@@ -633,9 +676,12 @@ def net_test(args):
             print(e)
             continue
 
-        use_pred_vel = True
-        body_frame_3regress = True
-        body_frame = True
+        # use_pred_vel = True
+        # body_frame_3regress = True
+        # body_frame = True
+        use_pred_vel = False
+        body_frame_3regress = False
+        body_frame = False
         
         # Obtain trajectory
         start_t = time.time()

@@ -126,8 +126,8 @@ def get_vector_feature(x):
     
     _, num_dims, _ = x.size()
     
-    # div = 6 #for 6D imu
-    div = 9 #for 6D imu + vel_body
+    div = 6 #for 6D imu
+    # div = 9 #for 6D imu + vel_body
     assert num_dims % div == 0, f"{num_dims} is not divisible by {div}"
     num_dims = int(num_dims / div)
     

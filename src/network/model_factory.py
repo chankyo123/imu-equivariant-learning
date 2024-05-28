@@ -1,3 +1,4 @@
+# from network.eq_resnet_1res_bd import VN_BasicBlock1D, VN_ResNet1D    #6D or 9D
 from network.eq_resnet_2res_bd import VN_BasicBlock1D, VN_ResNet1D    #6D or 9D
 # from network.eq_resnet_1res import VN_BasicBlock1D, VN_ResNet1D
 # from network.eq_resnet_2res import VN_BasicBlock1D, VN_ResNet1D

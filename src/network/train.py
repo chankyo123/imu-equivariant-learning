@@ -148,7 +148,11 @@ def do_train(network, train_loader, device, epoch, optimizer, transforms=[], bod
         if body_frame_3regress: 
             loss = get_loss(pred_vel, pred_cov, targ_vel, epoch, body_frame_3regress)
         else:
-            loss = get_loss(pred, pred_cov, targ, epoch, False)
+            #1. use dt as target
+            # loss = get_loss(pred, pred_cov, targ, epoch, False)
+            
+            #2. use v as target
+            loss = get_loss(pred_vel, pred_cov, targ_vel, epoch, False)
 
         train_targets.append(torch_to_numpy(targ))
         train_preds.append(torch_to_numpy(pred))

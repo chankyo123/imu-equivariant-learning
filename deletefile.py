@@ -11,7 +11,8 @@ def delete_files_except(directory, exceptions):
                 os.remove(file_path)
 
 # Replace 'your_directory' with the path to your target directory
-directory_path = '/workspace/TLIO/batch_filter_outputs_idso2_uf20/idso2_eq_2res/'
+# directory_path = '/workspace/imu-equivariant-learning/batch_filter_outputs_uf10/resnet/'
+directory_path = '/workspace/imu-equivariant-learning/batch_filter_outputs_uf10/res_2res_nodrop/'
 # List of files to keep in each subdirectory
 files_to_keep = ['debug.txt', 'not_vio_state.txt.npy', 'metrics.json', 'parameters.json']
 

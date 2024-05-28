@@ -233,8 +233,8 @@ class SequencesDataset:
                 
                 if "imu" in sensor_name:
                     feat = data_chunk[:,1:7] # gyro, accelerometer
-                    feat_vel_body = data_chunk[:, -3:]
-                    feat = np.concatenate((feat, feat_vel_body), axis=1)
+                    # feat_vel_body = data_chunk[:, -3:]
+                    # feat = np.concatenate((feat, feat_vel_body), axis=1)
                 if "mag" in sensor_name:
                     feat = data_chunk[:,1:4]
                 if "barom" in sensor_name:
@@ -257,7 +257,8 @@ class SequencesDataset:
         return feats, gt_data
 
     def data_chunk_from_seq_data(self, seq_data, seq_desc, row):
-        body_frame = True
+        # body_frame = True
+        body_frame = False
         body_frame_velocity = False
         
         feats, gt_data = self.unpack_data_window(seq_data, seq_desc, row)

@@ -54,6 +54,12 @@ if __name__ == "__main__":
         default=f"False",
         help="Use Fixed Covariance or from Network",
     )
+    io_groups.add_argument(
+        "--run_data",
+        type=str,
+        default=f"0",
+        help="choose among 1~4",
+    )
     args = parser.parse_args()
 
     all_models = list(Path.cwd().glob(args.model_globbing))
@@ -104,6 +110,8 @@ if __name__ == "__main__":
                 f"{args.input_3}",
                 "--use_const_cov",
                 f"{args.use_const_cov}",
+                "--run_data",
+                f"{args.run_data}",
             ]
             logging.info(" ".join(command))
             try:

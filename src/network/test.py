@@ -97,19 +97,28 @@ def pose_integrate(args, dataset, preds, use_pred_vel, body_frame):
     else:
         dp_t = args.window_time
         pred_vels = preds / dp_t
+        print("here")
     #dts = np.mean(ts[ind_intg[1:]] - ts[ind_intg[:-1]])
     dts = np.mean(ts[1:] - ts[:-1])
     #pos_intg = np.zeros([pred_vels.shape[0] + 1, args.output_dim])
     pos_intg = np.zeros([pred_vels.shape[0], args.output_dim])
     #pos_intg[0] = pos_gt[0]
     if use_pred_vel:
-        # displacement_intg = np.cumsum(pred_vels[:, :] * dts*1000000, axis=0)
-        displacement_intg = np.cumsum(pred_vels[:, :] * dts, axis=0)
+        if 'sim' in args.root_dir:
+            displacement_intg = np.cumsum(pred_vels[:, :] * dts * 1000000, axis=0)
+        else:
+            displacement_intg = np.cumsum(pred_vels[:, :] * dts, axis=0)
+            
+        # displacement_intg = np.cumsum(pred_vels[:, :] * dts, axis=0)
+        
         # R_z = Rotation.from_euler("xyz", [0, 0, -30], degrees=True).as_matrix()
         # print(r_gt.as_matrix()[0,:,:])
         # displacement_intg = np.einsum('jk,ik->ij', R_z, displacement_intg)
     else:
-        displacement_intg = np.cumsum(pred_vels[:, :] * dts, axis=0)
+        if 'sim' in args.root_dir:
+            displacement_intg = np.cumsum(pred_vels[:, :] * dts * 1000000, axis=0)
+        else:
+            displacement_intg = np.cumsum(pred_vels[:, :] * dts, axis=0)
     pos_intg =  displacement_intg+ pos_gt[0]
 
         # pos_gt = pos_intg_gt + pos_gt[0]
@@ -679,10 +688,14 @@ def net_test(args):
         # use_pred_vel = True
         # body_frame_3regress = True
         # body_frame = True
-        use_pred_vel = False
-        body_frame_3regress = False
-        body_frame = False
         
+        # use_pred_vel = False
+        # body_frame_3regress = False
+        # body_frame = False
+        
+        use_pred_vel = eval(args.body_frame)
+        body_frame_3regress = eval(args.body_frame)
+        body_frame = eval(args.body_frame)
         # Obtain trajectory
         start_t = time.time()
         net_attr_dict = get_inference(network, seq_loader, device, epoch=50, body_frame_3regress = body_frame_3regress)

@@ -8,13 +8,13 @@ from network.eq_resnet_2res_bd import VN_BasicBlock1D, VN_ResNet1D    #6D or 9D
 # from network.eq_resnet_linear_1res import VN_BasicBlock1D, VN_ResNet1D
 
 # from network.model_resnet_1res_nodrop import BasicBlock1D, ResNet1D
-from network.model_resnet_2res_nodrop import BasicBlock1D, ResNet1D
+# from network.model_resnet_2res_nodrop import BasicBlock1D, ResNet1D
 # from network.model_resnet_3res_nodrop import BasicBlock1D, ResNet1D
 # from network.model_resnet_4res_nodrop import BasicBlock1D, ResNet1D
 
 # from network.model_vn_resnet_2 import VN_BasicBlock1D, VN_ResNet1D
 
-# from network.model_resnet import BasicBlock1D, ResNet1D
+from network.model_resnet import BasicBlock1D, ResNet1D
 
 
 # from network.model_resnet_2res_nodrop import BasicBlock1D, ResNet1D

@@ -313,8 +313,7 @@ class ImuTracker:
 
         # augmentation propagation / propagation
         # propagate at IMU input rate, augmentation propagation depends on t_augmentation_us
-        if not self.use_riekf : 
-            t_augmentation_us = self.next_aug_t_us if do_augmentation_and_update else None
+        t_augmentation_us = self.next_aug_t_us if do_augmentation_and_update else None
 
         # IMU interpolation and data saving for network (using compensated IMU)
         if do_interpolation_of_imu:

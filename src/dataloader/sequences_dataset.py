@@ -258,6 +258,7 @@ class SequencesDataset:
 
     def data_chunk_from_seq_data(self, seq_data, seq_desc, row):
         # body_frame = True
+        # body_frame_velocity = True
         body_frame = False
         body_frame_velocity = False
         

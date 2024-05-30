@@ -559,8 +559,8 @@ class ImuMSCKF:
         self.state.s_R = X_new[0:3, 0:3]
         self.state.s_v = X_new[0:3, 3].reshape(-1, 1)
         self.state.s_p = X_new[0:3, 4].reshape(-1, 1)
-        self.state.s_ba = Theta_new[3:6].reshape(-1, 1)
-        self.state.s_bg = Theta_new[0:3].reshape(-1, 1)
+        # self.state.s_ba = Theta_new[3:6].reshape(-1, 1)
+        # self.state.s_bg = Theta_new[0:3].reshape(-1, 1)
         
         # self.state.si_Rs.append(self.state.s_R)  
         # self.state.si_vs.append(self.state.s_R.T @ self.state.s_v)  #save body velocity

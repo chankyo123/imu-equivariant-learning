@@ -35,6 +35,8 @@ if __name__ == "__main__":
     parser.add_argument("--arch", type=str, default="vn_resnet")
     parser.add_argument("--cpu", action="store_true")
     parser.add_argument("--input_dim", type=int, default=6)
+    parser.add_argument("--body_frame", type=str, default="True")
+    # add_bool_arg(parser, "body_frame", default=True)
     parser.add_argument("--output_dim", type=int, default=3)
     parser.add_argument("-j", "--workers", type=int, default=4)
     parser.add_argument("--dataset_style", type=str, default="mmap", 

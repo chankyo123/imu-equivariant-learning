@@ -60,7 +60,11 @@ def get_inference(network, data_loader, device, epoch, body_frame_3regress = Fal
         if body_frame_3regress: 
             loss = get_loss(pred_vel, pred_cov, targ_vel, epoch, body_frame_3regress)
         else:
-            loss = get_loss(pred, pred_cov, targ, epoch, body_frame_3regress)
+            #1. use dt as target
+            # loss = get_loss(pred, pred_cov, targ, epoch, False)
+            
+            #2. use v as target
+            loss = get_loss(pred, pred_cov, targ_vel, epoch, False)
 
         targets_all.append(torch_to_numpy(targ))
         preds_all.append(torch_to_numpy(pred))
@@ -152,7 +156,7 @@ def do_train(network, train_loader, device, epoch, optimizer, transforms=[], bod
             # loss = get_loss(pred, pred_cov, targ, epoch, False)
             
             #2. use v as target
-            loss = get_loss(pred_vel, pred_cov, targ_vel, epoch, False)
+            loss = get_loss(pred, pred_cov, targ_vel, epoch, False)
 
         train_targets.append(torch_to_numpy(targ))
         train_preds.append(torch_to_numpy(pred))
@@ -370,8 +374,14 @@ def net_train(args):
     train_transforms = data.get_train_transforms()
 
     #train (world/bodyframe) imu data
-    body_frame = True
-    body_frame_3regress = True
+    # body_frame = True
+    # body_frame_3regress = True
+    
+    # body_frame = False
+    # body_frame_3regress = False
+    
+    body_frame = eval(args.body_frame)
+    body_frame_3regress = eval(args.body_frame)
     if not body_frame: 
         train_transforms = data.get_train_transforms()
     else:
@@ -488,7 +498,7 @@ def net_train(args):
         else:
             save_model(args, epoch, network, optimizer, best=False)
             
-        if epoch == 99 or epoch == 117 or epoch == 125 or epoch == 150 or epoch == 199 or epoch == 49 or epoch == 80 or epoch == 90:
+        if epoch in {49, 80, 90, 99, 109, 119, 129, 139, 149, 159, 199}:
             save_model(args, epoch, network, optimizer, best=False, interrupt=False)
     
     mean_epoch_time = np.mean(consumed_times)

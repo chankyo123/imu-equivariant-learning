@@ -276,6 +276,7 @@ def run(args, dataset):
     # get vio states
     if not args.plot_sim:
         if os.path.exists(os.path.join(results_folder, "vio_states.npy")):
+        # if 1 == 2:
             vio_states = np.load(os.path.join(results_folder, "vio_states.npy"))
             vio_euls = vio_states[:, :3]
             vio_p = vio_states[:, 3:6]
@@ -290,6 +291,7 @@ def run(args, dataset):
             accelScaleInv = accelScaleInv_flat.reshape((-1, 3, 3))
             gyroScaleInv = gyroScaleInv_flat.reshape((-1, 3, 3))
         else:
+            # print("here")
             data = np.load(osp.join(args.root_dir, dataset, "imu0_resampled.npy"))
             vio_ts = data[:, 0] * 1e-6
             vio_rq = data[:,-10:-6]

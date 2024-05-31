@@ -145,6 +145,7 @@ if __name__ == "__main__":
     logging.info(pprint(vars(args)))
     # run filter
     data_list = os.path.join(args.root_dir, "test_list.txt")
+    print("run_data :  ", args.run_data)
     if args.run_data == "1":
         data_list = os.path.join(args.root_dir, "test_list1.txt")
     elif args.run_data == "2":

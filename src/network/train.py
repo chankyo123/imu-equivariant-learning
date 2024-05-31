@@ -103,6 +103,7 @@ def do_train(network, train_loader, device, epoch, optimizer, input_dim, transfo
     #for bid, (feat, targ, _, _) in enumerate(train_loader):
     for bid, sample in enumerate(train_loader):
         sample = to_device(sample, device)
+        
         for transform in transforms:
             sample = transform(sample)
         feat = sample["feats"]["imu0"]

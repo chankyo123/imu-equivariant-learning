@@ -95,9 +95,9 @@ def pose_integrate(args, dataset, preds, use_pred_vel, body_frame):
         
         vel_world_gt= vel_body_gt
     else:
+        print("here")
         dp_t = args.window_time
         pred_vels = preds / dp_t
-        print("here")
     #dts = np.mean(ts[ind_intg[1:]] - ts[ind_intg[:-1]])
     dts = np.mean(ts[1:] - ts[:-1])
     #pos_intg = np.zeros([pred_vels.shape[0] + 1, args.output_dim])
@@ -143,7 +143,7 @@ def pose_integrate(args, dataset, preds, use_pred_vel, body_frame):
     return traj_attr_dict
 
 
-def compute_metrics_and_plotting(args, net_attr_dict, traj_attr_dict):
+def compute_metrics_and_plotting(args, net_attr_dict, traj_attr_dict, body_frame):
     """
     Obtain trajectory and compute metrics.
     """
@@ -155,8 +155,20 @@ def compute_metrics_and_plotting(args, net_attr_dict, traj_attr_dict):
     eul_pred = traj_attr_dict["eul_pred"]
     eul_gt = traj_attr_dict["eul_gt"]
 
+    preds = np.array(net_attr_dict["preds"])
+    targets = np.array(net_attr_dict["targets"])
+    preds_vel = np.array(net_attr_dict["preds_vel"])
+    targets_vel =  np.array(net_attr_dict["targets_vel"])
+    
     # get RMSE
     rmse = np.sqrt(np.mean(np.linalg.norm(pos_pred - pos_gt, axis=1) ** 2))
+    if body_frame:
+        rmse_vel = np.sqrt(np.mean(np.linalg.norm(preds_vel - targets_vel, axis=1) ** 2))
+        rmse_vel = rmse_vel.astype(np.float64)
+    else:
+        rmse_vel = np.sqrt(np.mean(np.linalg.norm(preds - targets, axis=1) ** 2))
+        rmse_vel = rmse_vel.astype(np.float64)
+        
     # get ATE
     diff_pos = pos_pred - pos_gt
     ate = np.mean(np.linalg.norm(diff_pos, axis=1))
@@ -189,6 +201,7 @@ def compute_metrics_and_plotting(args, net_attr_dict, traj_attr_dict):
             "rpe": rpe_rmse,
             "rpe_z": rpe_rmse_z,
             "rpe_yaw": relative_yaw_rmse,
+            "rmse_vel": rmse_vel,
         }
     }
 
@@ -289,12 +302,12 @@ def plot_3d_1var_with_sigma(x, y, sig, xlb, ylbs, num=None, dpi=None, figsize=No
     plus_sig = 3 * sig
     minus_sig = -3 * sig
     for i in range(3):
-        plt.subplot(3, 1, i + 1)
-        plt.plot(x, plus_sig[:, i], "-g", linewidth=0.2)
-        plt.plot(x, minus_sig[:, i], "-g", linewidth=0.2)
-        plt.fill_between(
-            x, plus_sig[:, i], minus_sig[:, i], facecolor="green", alpha=0.5
-        )
+        # plt.subplot(3, 1, i + 1)
+        # plt.plot(x, plus_sig[:, i], "-g", linewidth=0.2)
+        # plt.plot(x, minus_sig[:, i], "-g", linewidth=0.2)
+        # plt.fill_between(
+        #     x, plus_sig[:, i], minus_sig[:, i], facecolor="green", alpha=0.5
+        # )
         plt.plot(x, y[:, i], "-b", linewidth=0.5)
         plt.ylabel(ylbs[i])
         plt.grid(True)
@@ -410,16 +423,29 @@ def make_plots(args, plot_dict, outdir, use_pred_vel):
         dpi=dpi,
         figsize=figsize,
     )
-    fig4 = plot_3d_1var_with_sigma(
-        pred_ts,
-        preds - targets,
-        pred_sigmas,
-        xlb="t(s)",
-        ylbs=["x(m)", "y(m)", "z(m)"],
-        num="Displacement errors",
-        dpi=dpi,
-        figsize=figsize,
-    )
+    if use_pred_vel:
+        fig4 = plot_3d_1var_with_sigma(
+            pred_ts,
+            preds_vel - targets_vel,
+            pred_sigmas,
+            xlb="t(s)",
+            ylbs=["x(m)", "y(m)", "z(m)"],
+            num="Displacement errors",
+            dpi=dpi,
+            figsize=figsize,
+        )
+        
+    else:
+        fig4 = plot_3d_1var_with_sigma(
+            pred_ts,
+            preds - targets,
+            pred_sigmas,
+            xlb="t(s)",
+            ylbs=["x(m)", "y(m)", "z(m)"],
+            num="Displacement errors",
+            dpi=dpi,
+            figsize=figsize,
+        )
     fig5 = plot_3d_1var(
         None,
         rpes,
@@ -464,7 +490,7 @@ def make_plots(args, plot_dict, outdir, use_pred_vel):
     fig1.savefig(osp.join(outdir, "view.png"))
     fig2.savefig(osp.join(outdir, "pos.png"))
     fig3.savefig(osp.join(outdir, "pred.svg"))
-    fig4.savefig(osp.join(outdir, "pred-err.svg"))
+    fig4.savefig(osp.join(outdir, "pred-err.png"))
     fig5.savefig(osp.join(outdir, "rpe.svg"))
     fig6.savefig(osp.join(outdir, "norm_angle.svg"))
 
@@ -512,7 +538,7 @@ def get_inference(network, data_loader, device, epoch, body_frame_3regress):
             pred, pred_cov = network(feat)
             # print(feat.shape, pred.shape, pred_cov.shape)  @torch.Size([1024, 9, 200]) torch.Size([1024, 3]) torch.Size([1024, 3])
             
-            pred_vel = torch.tensor([1]).to('cuda')
+            pred_vel = pred
             targ_vel =torch.zeros_like(pred_vel)
 
         targ = sample["targ_dt_World"][:,-1,:]
@@ -695,6 +721,7 @@ def net_test(args):
         
         use_pred_vel = eval(args.body_frame)
         body_frame_3regress = eval(args.body_frame)
+        # body_frame_3regress = False
         body_frame = eval(args.body_frame)
         # Obtain trajectory
         start_t = time.time()
@@ -733,7 +760,7 @@ def net_test(args):
 
         # obtain metrics
         metrics, plot_dict = compute_metrics_and_plotting(
-            args, net_attr_dict, traj_attr_dict
+            args, net_attr_dict, traj_attr_dict, body_frame
         )
         
         # only consider diagonal term of covariance
@@ -748,15 +775,26 @@ def net_test(args):
         all_metrics[data] = metrics
 
         outfile_net = osp.join(outdir, "net_outputs.txt")
-        net_outputs_data = np.concatenate(
-            [
-                plot_dict["pred_ts"].reshape(-1, 1),
-                plot_dict["preds"],
-                plot_dict["targets"],
-                plot_dict["pred_sigmas"],
-            ],
-            axis=1,
-        )
+        if use_pred_vel:
+            net_outputs_data = np.concatenate(
+                [
+                    plot_dict["pred_ts"].reshape(-1, 1),
+                    plot_dict["preds_vel"],
+                    plot_dict["targets_vel"],
+                    plot_dict["pred_sigmas"],
+                ],
+                axis=1,
+            )
+        else:
+            net_outputs_data = np.concatenate(
+                [
+                    plot_dict["pred_ts"].reshape(-1, 1),
+                    plot_dict["preds"],
+                    plot_dict["targets"],
+                    plot_dict["pred_sigmas"],
+                ],
+                axis=1,
+            )
         np.savetxt(outfile_net, net_outputs_data, delimiter=",")
 
         if args.save_plot:

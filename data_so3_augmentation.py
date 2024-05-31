@@ -2,6 +2,7 @@ import os
 import numpy as np
 from scipy.spatial.transform import Rotation
 import shutil
+import pandas as pd
 
 # def rand_rotation_matrix(deflection=1.0, randnums=None):
 # def rand_rotation_matrix(theta):
@@ -107,11 +108,17 @@ def copy_files_from_other_list(source_directory, all_list_path, destination_dire
 
 
 # Directory containing data
-data_directory = "./local_data/tlio_golden"
-save_directory = "./local_data_train_so3/tlio_golden"
-train_list_path = os.path.join(data_directory, "train_list.txt") 
-# train_list_path = os.path.join(data_directory, "test_list.txt") 
-test_list_path = os.path.join(data_directory, "test_list.txt") 
+data_directory = "./local_data_bodyframe/tlio_golden"
+save_directory = "./local_data_bodyframe_test_so3_csv/tlio_golden"
+# data_directory = "./sim_imu_longerseq_worldframe"
+# save_directory = "./sim_imu_longerseq_worldframe_idso3"
+
+# data_directory = "./sim_imu_longerseq"
+# save_directory = "./sim_imu_longerseq_idso2_fixed2"
+
+# train_list_path = os.path.join(data_directory, "train_list.txt") 
+train_list_path = os.path.join(data_directory, "test_list.txt") 
+# test_list_path = os.path.join(data_directory, "test_list.txt") 
 all_list_path = os.path.join(data_directory, "all_ids.txt") 
 
 # Load train_list.txt to get subdirectory names
@@ -126,45 +133,74 @@ subdirectories = subdirectories1 + subdirectories2
 for idx, subdirectory in enumerate(subdirectories):
     subdirectory_path = os.path.join(data_directory, subdirectory)
 
-    # Load the original data from the npy file
-    original_data = np.load(os.path.join(subdirectory_path, "imu0_resampled.npy"))
+    npy_file_path = os.path.join(subdirectory_path, "imu0_resampled.npy")
+    if os.path.exists(npy_file_path):
+        original_data = np.load(npy_file_path)
 
-    # Define 3D rotation matrix (modify as needed)
-    # rotation_matrix = Rotation.from_euler('xyz', [15, 30, 45], degrees=True).as_matrix()
-    random_theta = np.random.uniform(0, 2 * np.pi, len(subdirectories))
-    random_roll = np.random.uniform(0, 2 * np.pi, len(subdirectories))
-    random_pitch = np.random.uniform(0, 2 * np.pi, len(subdirectories))
-    
-    # rotation_matrix = rand_rotation_matrix(random_theta[idx])
-    # neg_rotation_matrix = rand_rotation_matrix(-1*random_theta[idx])
+        # Define 3D rotation matrix (modify as needed)
+        # rotation_matrix = Rotation.from_euler('xyz', [15, 30, 45], degrees=True).as_matrix()
+        random_theta = np.random.uniform(0, 2 * np.pi, len(subdirectories))
+        random_roll = np.random.uniform(0, 2 * np.pi, len(subdirectories))
+        random_pitch = np.random.uniform(0, 2 * np.pi, len(subdirectories))
+        
+        #so2 rotation : roll == pitch == 0
+        # random_roll[idx] = 0
+        # random_pitch[idx] = 0
+        
+        # rotation_matrix = rand_rotation_matrix(random_theta[idx])
+        # neg_rotation_matrix = rand_rotation_matrix(-1*random_theta[idx])
 
-    rotation_matrix = rand_rotation_matrix(random_theta[idx], random_roll[idx], random_pitch[idx])
-    neg_rotation_matrix = rand_rotation_matrix(-1*random_theta[idx], random_roll[idx], random_pitch[idx])
-    
-    # Apply rotation to gyroscope, acceleration, quaternion, position, and velocity data
-    rotated_gyroscope = apply_rotation(original_data[:, 1:4], rotation_matrix)
-    rotated_acceleration = apply_rotation(original_data[:, 4:7], rotation_matrix)
-    quaternion = original_data[:, 7:11]
-    r = Rotation.from_quat(quaternion)
-    r = r.as_matrix()
-    # rotated_quaternion = apply_rotation(r, rotation_matrix)
-    rotated_quaternion = apply_rotation(neg_rotation_matrix,r)
-    r = Rotation.from_matrix(rotated_quaternion)
-    rotated_quaternion = r.as_quat()
-    # print(rotated_quaternion[0,:])
-    
-    rotated_position = apply_rotation(original_data[:, 11:14], rotation_matrix)
-    rotated_velocity = apply_rotation(original_data[:, 14:17], rotation_matrix)
+        rotation_matrix = rand_rotation_matrix(random_theta[idx], random_roll[idx], random_pitch[idx])
+        neg_rotation_matrix = rand_rotation_matrix(-1*random_theta[idx], random_roll[idx], random_pitch[idx])
+        
+        # Apply rotation to gyroscope, acceleration, quaternion, position, and velocity data
+        rotated_gyroscope = apply_rotation(original_data[:, 1:4], rotation_matrix)
+        rotated_acceleration = apply_rotation(original_data[:, 4:7], rotation_matrix)
+        quaternion = original_data[:, 7:11]
+        r = Rotation.from_quat(quaternion)
+        r = r.as_matrix()
+        # rotated_quaternion = apply_rotation(r, rotation_matrix)
+        rotated_quaternion = apply_rotation(neg_rotation_matrix,r)
+        r = Rotation.from_matrix(rotated_quaternion)
+        rotated_quaternion = r.as_quat()
+        # print(rotated_quaternion[0,:])
+        
+        rotated_position = apply_rotation(original_data[:, 11:14], rotation_matrix)
+        rotated_velocity = apply_rotation(original_data[:, 14:17], rotation_matrix)
 
-    # Concatenate the time column and rotated data
-    rotated_data = np.concatenate([original_data[:, :1], rotated_gyroscope, rotated_acceleration,
-                                   rotated_quaternion, rotated_position, rotated_velocity], axis=1)
+        # Concatenate the time column and rotated data
+        rotated_data = np.concatenate([original_data[:, :1], rotated_gyroscope, rotated_acceleration,
+                                    rotated_quaternion, rotated_position, rotated_velocity], axis=1)
+        
+        # Save the rotated data in the same format
+        path = os.path.join(save_directory, subdirectory)
+        if not os.path.exists(path):
+            os.makedirs(path)
+        np.save(os.path.join(path, "imu0_resampled.npy"), rotated_data)
     
-    # Save the rotated data in the same format
-    path = os.path.join(save_directory, subdirectory)
-    if not os.path.exists(path):
-        os.makedirs(path)
-    np.save(os.path.join(path, "imu0_resampled.npy"), rotated_data)
+    csv_file_path = os.path.join(subdirectory_path, "imu_samples_0.csv")
+    if os.path.exists(csv_file_path):
+        df = pd.read_csv(csv_file_path)
+        if df.shape[1] >= 7:  # Ensure the CSV file has enough columns
+            gyro_data = df.iloc[:, 2:5].values
+            acc_data = df.iloc[:, 5:8].values
+            
+            # Apply rotation to gyroscope and acceleration data
+            rotated_gyro_data = apply_rotation(gyro_data, rotation_matrix)
+            rotated_acc_data = apply_rotation(acc_data, rotation_matrix)
+            
+            # Replace the original data with the rotated data
+            df.iloc[:, 0:2] = df.iloc[:, 0:2].values
+            df.iloc[:, 2:5] = rotated_gyro_data
+            df.iloc[:, 5:8] = rotated_acc_data
+            
+            # Save the rotated CSV data
+            # rotated_csv_path = os.path.join(save_directory, subdirectory, "imu_samples_0.csv")
+            rotated_csv_path = os.path.join(save_directory, subdirectory, "imu_samples_0.csv")
+
+            df.to_csv(rotated_csv_path, index=False)
+    print(path)
+    
     
 for subdir in os.listdir(data_directory):
         subdir_path = os.path.join(data_directory, subdir)
@@ -176,7 +212,8 @@ for subdir in os.listdir(data_directory):
                 file_path = os.path.join(subdir_path, file)
 
                 # Check if it's a JSON or CSV file
-                if file.endswith(".json") or file.endswith(".csv"):
+                # if file.endswith(".json") or file.endswith(".csv"):
+                if file.endswith(".json"):
                     # Create the destination subdirectory if it doesn't exist
                     destination_subdirectory = os.path.join(save_directory, subdir)
                     os.makedirs(destination_subdirectory, exist_ok=True)
@@ -186,7 +223,15 @@ for subdir in os.listdir(data_directory):
 
 copy_files_from_other_list(data_directory, all_list_path, save_directory)
 
+# List of specific files to copy
+specific_files = ['all_ids.txt', 'spline_metrics.csv', 'test_list.txt', 'train_list.txt', 'val_list.txt', 'test_list1.txt', 'test_list2.txt', 'test_list3.txt', 'test_list4.txt']
 
+# Copy the specific files from the source directory to the destination directory
+for file in specific_files:
+    file_path = os.path.join(data_directory, file)
+    if os.path.exists(file_path):
+        shutil.copy(file_path, save_directory)
+        
 # import os
 
 # def count_files_in_subdirectories(directory):

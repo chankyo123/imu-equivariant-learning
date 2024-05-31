@@ -509,8 +509,8 @@ class ImuMSCKF:
         
         
         # N = 3*np.eye(3)
-        N = 1*np.eye(3)
-        # N = 0.1*np.eye(3)
+        # N = 1*np.eye(3)
+        N = 0.1*np.eye(3)
         # N = 0.01*np.eye(3)
         
         # N = self.meascov_scale * meas_cov

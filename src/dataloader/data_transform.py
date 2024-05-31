@@ -53,7 +53,7 @@ class TransformAddNoiseBias:
                     feat_aug[:, 3:6, :] += (
                         torch.randn(N, 3, T, device=feat.device, dtype=feat.dtype) * self.accel_noise_std
                     )
-                elif feat.shape[1] == 9:
+                elif feat.shape[1] == 9 or feat.shape[1] == 18:
                     # shift in the accel and gyro bias terms, also add bias in vel_body
                     # print('here')
                     # None

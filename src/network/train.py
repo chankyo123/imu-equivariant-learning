@@ -91,7 +91,7 @@ def get_inference(network, data_loader, device, epoch, body_frame_3regress = Fal
     return attr_dict
 
 
-def do_train(network, train_loader, device, epoch, optimizer, transforms=[], body_frame_3regress = False, body_frame = False):
+def do_train(network, train_loader, device, epoch, optimizer, input_dim, transforms=[], body_frame_3regress = False, body_frame = False):
     """
     Train network for one epoch using a specified data loader
     Outputs all targets, predicts, predicted covariance params, and losses in numpy arrays
@@ -107,7 +107,7 @@ def do_train(network, train_loader, device, epoch, optimizer, transforms=[], bod
             sample = transform(sample)
         feat = sample["feats"]["imu0"]
         optimizer.zero_grad()
-        if bid <6 and (epoch< 10 or epoch>=90):
+        if bid <6 and (epoch< 11 or epoch>=90):
             print('bid = ', bid)
             
         # # >>> SO(3) Equivariance Check
@@ -115,17 +115,46 @@ def do_train(network, train_loader, device, epoch, optimizer, transforms=[], bod
         # rotation_matrix = torch.from_numpy(rotation_matrix).to('cuda').to(torch.float32)
         # accelerometer_data = feat[:, :3,:].to(torch.float32)
         # accelerometer_data = accelerometer_data.permute(1,0,2).reshape(3,-1)
-        # gyroscope_data = feat[:, 3:, :].to(torch.float32)
+        # gyroscope_data = feat[:, 3:6, :].to(torch.float32)
         # gyroscope_data = gyroscope_data.permute(1,0,2).reshape(3,-1)
-
+        # if input_dim in (9, 18):
+        #     vel_data = feat[:, 6:9, :].to(torch.float32)
+        #     vel_data = vel_data.permute(1,0,2).reshape(3,-1)
+        #     if input_dim == 18:
+        #         ori_data_1 = feat[:, 9:12, :].to(torch.float32)
+        #         ori_data_2 = feat[:, 12:15, :].to(torch.float32)
+        #         ori_data_3 = feat[:, 15:18, :].to(torch.float32)
+        #         ori_data_1 = ori_data_1.permute(1,0,2).reshape(3,-1)
+        #         ori_data_2 = ori_data_2.permute(1,0,2).reshape(3,-1)
+        #         ori_data_3 = ori_data_3.permute(1,0,2).reshape(3,-1)
+                
         # rotated_accelerometer_data = torch.matmul(rotation_matrix, accelerometer_data)
         # rotated_accelerometer_data = rotated_accelerometer_data.reshape(rotated_accelerometer_data.size(0), feat.size(0), feat.size(2))
         # rotated_accelerometer_data = rotated_accelerometer_data.permute(1,0,2)
         # rotated_gyroscope_data = torch.matmul(rotation_matrix, gyroscope_data)
         # rotated_gyroscope_data = rotated_gyroscope_data.reshape(rotated_gyroscope_data.size(0), feat.size(0), feat.size(2))
         # rotated_gyroscope_data = rotated_gyroscope_data.permute(1,0,2)
+        # if input_dim in (9, 18):
+        #     rotated_vel_data = torch.matmul(rotation_matrix, vel_data)
+        #     rotated_vel_data = rotated_vel_data.reshape(rotated_vel_data.size(0), feat.size(0), feat.size(2))
+        #     rotated_vel_data = rotated_vel_data.permute(1,0,2)
+        #     if input_dim == 18:
+        #         rotated_ori_data1 = torch.matmul(rotation_matrix, ori_data_1)
+        #         rotated_ori_data2 = torch.matmul(rotation_matrix, ori_data_2)
+        #         rotated_ori_data3 = torch.matmul(rotation_matrix, ori_data_3)
+        #         rotated_ori_data1 = rotated_ori_data1.reshape(rotated_ori_data1.size(0), feat.size(0), feat.size(2))
+        #         rotated_ori_data1 = rotated_ori_data1.permute(1,0,2)
+        #         rotated_ori_data2 = rotated_ori_data2.reshape(rotated_ori_data2.size(0), feat.size(0), feat.size(2))
+        #         rotated_ori_data2 = rotated_ori_data2.permute(1,0,2)
+        #         rotated_ori_data3 = rotated_ori_data3.reshape(rotated_ori_data3.size(0), feat.size(0), feat.size(2))
+        #         rotated_ori_data3 = rotated_ori_data3.permute(1,0,2)
         
-        # feat_rot = torch.cat((rotated_accelerometer_data, rotated_gyroscope_data), dim=1)
+        # if input_dim in (9, 18):
+        #     feat_rot = torch.cat((rotated_accelerometer_data, rotated_gyroscope_data, rotated_vel_data), dim=1)
+        #     if input_dim == 18:
+        #         feat_rot = torch.cat((rotated_accelerometer_data, rotated_gyroscope_data, rotated_vel_data, rotated_ori_data1, rotated_ori_data2, rotated_ori_data3), dim=1)
+        # else:
+        #     feat_rot = torch.cat((rotated_accelerometer_data, rotated_gyroscope_data), dim=1)
         # # <<< SO(3) Equivariance Check
         
         if body_frame_3regress: 
@@ -134,7 +163,10 @@ def do_train(network, train_loader, device, epoch, optimizer, transforms=[], bod
             pred, pred_cov= network(feat)
             pred_vel = torch.tensor([1]).to('cuda')
 
-        # pred_rot, pred_cov_rot = network(feat_rot)
+        # if body_frame_3regress: 
+        #     pred_rot, pred_cov_rot, pred_vel_rot = network(feat_rot)
+        # else:
+        #     pred_rot, pred_cov_rot = network(feat_rot)
         # print(torch.matmul(pred,rotation_matrix)[:3,:3])
         # print(pred_rot[:3,:3])
         # print()
@@ -172,12 +204,18 @@ def do_train(network, train_loader, device, epoch, optimizer, transforms=[], bod
 
         #print("Loss mean: ", loss.item())
         
-        #print("Gradients:")
-        #for name, param in network.named_parameters():
+        # print("Gradients:")
+        # for name, param in network.named_parameters():
         #    if param.requires_grad:
-        #        print(name, ": ", param.grad)
+        #         print(f'Parameter: {name} - gradient statistics:')
+        #         print(name, ": ", param.grad)
+                # print(f'  - Max: {torch.max(param.grad).item()}')
+                # print(f'  - Min: {torch.min(param.grad).item()}')
+                # print(f'  - Mean: {torch.mean(param.grad).item()}')
+                # print(f'  - Std: {torch.std(param.grad).item()}')
 
         torch.nn.utils.clip_grad_norm_(network.parameters(), 0.1, error_if_nonfinite=True)
+        # torch.nn.utils.clip_grad_norm_(network.parameters(), 0.1, error_if_nonfinite=False)
         optimizer.step()
 
     train_targets = np.concatenate(train_targets, axis=0)
@@ -473,7 +511,7 @@ def net_train(args):
 
         logging.info(f"-------------- Training, Epoch {epoch} ---------------")
         start_t = time.time()
-        train_attr_dict = do_train(network, train_loader, device, epoch, optimizer, train_transforms, body_frame_3regress, body_frame)
+        train_attr_dict = do_train(network, train_loader, device, epoch, optimizer, args.input_dim, train_transforms, body_frame_3regress, body_frame)
         mem_used_max_GB = torch.cuda.max_memory_allocated() / (1024*1024*1024)
         torch.cuda.reset_peak_memory_stats()
         mem_str = f'GPU Mem: {mem_used_max_GB:.3f}GB'
@@ -498,7 +536,7 @@ def net_train(args):
         else:
             save_model(args, epoch, network, optimizer, best=False)
             
-        if epoch in {49, 80, 90, 99, 109, 119, 129, 139, 149, 159, 199}:
+        if epoch in {8,9,19,29,39,49, 80, 90, 99, 109, 119, 129, 139, 149, 159, 199}:
             save_model(args, epoch, network, optimizer, best=False, interrupt=False)
     
     mean_epoch_time = np.mean(consumed_times)

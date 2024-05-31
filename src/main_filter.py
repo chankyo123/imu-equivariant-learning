@@ -145,15 +145,15 @@ if __name__ == "__main__":
     logging.info(pprint(vars(args)))
     # run filter
     data_list = os.path.join(args.root_dir, "test_list.txt")
-    print("run_data : , ", args.run_data)
-    if args.run_data == 1:
+    if args.run_data == "1":
         data_list = os.path.join(args.root_dir, "test_list1.txt")
-    elif args.run_data == 2:
+    elif args.run_data == "2":
         data_list = os.path.join(args.root_dir, "test_list2.txt")
-    elif args.run_data == 3:
+    elif args.run_data == "3":
         data_list = os.path.join(args.root_dir, "test_list3.txt")
-    elif args.run_data == 4:
+    elif args.run_data == "4":
         data_list = os.path.join(args.root_dir, "test_list4.txt")
+    print("data_list : ", data_list)
     with open(data_list) as f:
         data_names = [
             s.strip().split("," or " ")[0]

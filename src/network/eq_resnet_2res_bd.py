@@ -536,7 +536,7 @@ class VN_ResNet1D(nn.Module):
 
         mean_vel = self.output_block3(x)  # bodyframe velocity
         
-        # # >>> SO(3) Equivariance Check : (3,1) vector and (3,3) covariance
+        # >>> SO(3) Equivariance Check : (3,1) vector and (3,3) covariance
          
         # print('value x after layers : ',mean[:1,:])    
         # rotation_matrix = np.array([[0.1097, 0.1448, 0.9834],[0.8754, -0.4827, -0.0266],[0.4708, 0.8637, -0.1797]])
@@ -544,12 +544,20 @@ class VN_ResNet1D(nn.Module):
         # mean_rot = torch.matmul(rotation_matrix, mean.permute(1,0)).permute(1,0)
         # print('rotated value x after layers : ', mean_rot[:1,]) 
         
+        #1. using tlio's cov
+        # print('covariance after layers : ',covariance[:1,:])    
+        # rotation_matrix = np.array([[0.1097, 0.1448, 0.9834],[0.8754, -0.4827, -0.0266],[0.4708, 0.8637, -0.1797]])
+        # rotation_matrix = torch.from_numpy(rotation_matrix).to('cuda').to(torch.float32)
+        # covariance_rot = torch.matmul(torch.matmul(rotation_matrix, covariance.permute(1,0)).permute(1,0), rotation_matrix.T)
+        # print('rotated value x after layers : ', covariance_rot[:1,:]) 
+        
+        #2. using 3*3 cov
         # print('covariance after layers : ',covariance[:1,:,:])    
         # rotation_matrix = np.array([[0.1097, 0.1448, 0.9834],[0.8754, -0.4827, -0.0266],[0.4708, 0.8637, -0.1797]])
         # rotation_matrix = torch.from_numpy(rotation_matrix).to('cuda').to(torch.float32)
-        # x = torch.matmul(torch.matmul(rotation_matrix, covariance.permute(1,2,0)).permute(2,0,1), rotation_matrix.T)
-        # print('rotated value x after layers : ', covariance[:1,:,:]) 
-        # # <<< SO(3) Equivariance Check
+        # covariance_rot = torch.matmul(torch.matmul(rotation_matrix, covariance.permute(1,2,0)).permute(2,0,1), rotation_matrix.T)
+        # print('rotated value x after layers : ', covariance_rot[:1,:,:]) 
+        # <<< SO(3) Equivariance Check
             
         
         return mean, covariance, mean_vel

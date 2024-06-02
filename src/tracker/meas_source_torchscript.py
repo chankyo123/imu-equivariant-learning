@@ -27,10 +27,14 @@ class MeasSourceTorchScript:
         self.net.eval()
         logging.info("Model {} loaded to device {}.".format(model_path, self.device))
 
-    def get_displacement_measurement(self, net_gyr_w, net_acc_w, net_vel_body = None, input_3 = False, clip_small_disp=False):
+    def get_displacement_measurement(self, net_gyr_w, net_acc_w, net_vel_body = None, net_ori_b2w = None, input_3 = False, input_4 = False, clip_small_disp=False):
         with torch.no_grad():
             if input_3 : 
-                features = np.concatenate([net_gyr_w, net_acc_w, net_vel_body], axis=1)  # N x 9
+                if not input_4 : 
+                    features = np.concatenate([net_gyr_w, net_acc_w, net_vel_body], axis=1)  # N x 9
+                else:
+                    features = np.concatenate([net_gyr_w, net_acc_w, net_vel_body, net_ori_b2w], axis=1)  # N x 18
+                    
             else:
                 features = np.concatenate([net_gyr_w, net_acc_w], axis=1)  # N x 6
             features_t = torch.unsqueeze(

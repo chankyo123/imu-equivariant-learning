@@ -233,24 +233,25 @@ class SequencesDataset:
                 
                 if "imu" in sensor_name:
                     feat = data_chunk[:,1:7] # gyro, accelerometer
-                    feat_vel_body = data_chunk[:, -3:]
-                    feat = np.concatenate((feat, feat_vel_body), axis=1)
+                    # feat_vel_body = data_chunk[:, -3:]
+                    # feat = np.concatenate((feat, feat_vel_body), axis=1)
                     
-                    input_4 = True
-                    if input_4:
-                        rot = data_chunk[:,-10:-6]
-                        rot_matrices = Rotation.from_quat(data_chunk[:,:4]).as_matrix()
-                        col1_list = []
-                        col2_list = []
-                        col3_list = []
-                        for rot_matrix in rot_matrices:
-                            col1_list.append(rot_matrix[:, 0])
-                            col2_list.append(rot_matrix[:, 1])
-                            col3_list.append(rot_matrix[:, 2])
-                        col1_array = np.array(col1_list)
-                        col2_array = np.array(col2_list)
-                        col3_array = np.array(col3_list)
-                        feat = np.concatenate((feat, col1_array, col2_array, col3_array), axis=1)
+                    # # input_4 = True
+                    # input_4 = False
+                    # if input_4:
+                    #     rot = data_chunk[:,-10:-6]
+                    #     rot_matrices = Rotation.from_quat(data_chunk[:,:4]).as_matrix()
+                    #     col1_list = []
+                    #     col2_list = []
+                    #     col3_list = []
+                    #     for rot_matrix in rot_matrices:
+                    #         col1_list.append(rot_matrix[:, 0])
+                    #         col2_list.append(rot_matrix[:, 1])
+                    #         col3_list.append(rot_matrix[:, 2])
+                    #     col1_array = np.array(col1_list)
+                    #     col2_array = np.array(col2_list)
+                    #     col3_array = np.array(col3_list)
+                    #     feat = np.concatenate((feat, col1_array, col2_array, col3_array), axis=1)
                         
                 if "mag" in sensor_name:
                     feat = data_chunk[:,1:4]
@@ -274,10 +275,10 @@ class SequencesDataset:
         return feats, gt_data
 
     def data_chunk_from_seq_data(self, seq_data, seq_desc, row):
-        body_frame = True
-        body_frame_velocity = True
-        # body_frame = False
-        # body_frame_velocity = False
+        # body_frame = True
+        # body_frame_velocity = True
+        body_frame = False
+        body_frame_velocity = False
         
         feats, gt_data = self.unpack_data_window(seq_data, seq_desc, row)
 

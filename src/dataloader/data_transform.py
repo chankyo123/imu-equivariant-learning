@@ -60,32 +60,62 @@ class TransformAddNoiseBias:
                     
                     feat_aug[:, :3, :] += (
                         (torch.rand(N, 3, 1, device=feat.device, dtype=feat.dtype) - 0.5)
-                        * self.gyro_bias_range / 0.5
-                        # * 0.5 * self.gyro_bias_range / 0.5
+                        # * self.gyro_bias_range / 0.5
+                        * 0.5 * self.gyro_bias_range / 0.5
                     )
                     feat_aug[:, 3:6, :] += (
                         (torch.rand(N, 3, 1, device=feat.device, dtype=feat.dtype) - 0.5)
-                        * self.accel_bias_range / 0.1
-                        # * 0.5 * self.accel_bias_range / 0.1
+                        # * self.accel_bias_range / 0.1
+                        * 0.5 * self.accel_bias_range / 0.1
                     )
                     feat_aug[:, 6:9, :] += (
                         (torch.rand(N, 3, 1, device=feat.device, dtype=feat.dtype) - 0.5)
-                        * self.accel_bias_range / 0.1
-                        # * 0.5 * self.accel_bias_range / 0.1
+                        # * self.accel_bias_range / 0.1
+                        * 0.5 * self.accel_bias_range / 0.1
                         # * 3 * self.accel_bias_range / 0.1
                     )
-
+                    # if feat.shape[1] == 18:
+                    #     feat_aug[:, 9:12, :] += (
+                    #         (torch.rand(N, 3, 1, device=feat.device, dtype=feat.dtype) - 0.5)
+                    #         * self.gyro_bias_range / 0.5
+                    #         # * 0.5 * self.gyro_bias_range / 0.5
+                    #     )
+                    #     feat_aug[:, 12:15, :] += (
+                    #         (torch.rand(N, 3, 1, device=feat.device, dtype=feat.dtype) - 0.5)
+                    #         * self.gyro_bias_range / 0.5
+                    #         # * 0.5 * self.gyro_bias_range / 0.5
+                    #     )
+                    #     feat_aug[:, 15:18, :] += (
+                    #         (torch.rand(N, 3, 1, device=feat.device, dtype=feat.dtype) - 0.5)
+                    #         * self.gyro_bias_range / 0.5
+                    #         # * 0.5 * self.gyro_bias_range / 0.5
+                    #     )
                     # add gaussian noise
                     feat_aug[:, :3, :] += (
-                        torch.randn(N, 3, T, device=feat.device, dtype=feat.dtype) * self.gyro_noise_std
+                        # torch.randn(N, 3, T, device=feat.device, dtype=feat.dtype) * self.gyro_noise_std
+                        torch.randn(N, 3, T, device=feat.device, dtype=feat.dtype) * self.gyro_noise_std * 0.5
                     )
                     feat_aug[:, 3:6, :] += (
-                        torch.randn(N, 3, T, device=feat.device, dtype=feat.dtype) * self.accel_noise_std
+                        # torch.randn(N, 3, T, device=feat.device, dtype=feat.dtype) * self.accel_noise_std
+                        torch.randn(N, 3, T, device=feat.device, dtype=feat.dtype) * self.accel_noise_std * 0.5
                     )
                     feat_aug[:, 6:9, :] += (
-                        torch.randn(N, 3, T, device=feat.device, dtype=feat.dtype) * self.accel_noise_std
-                        # torch.randn(N, 3, T, device=feat.device, dtype=feat.dtype) * 0.5 * self.accel_noise_std
+                        # torch.randn(N, 3, T, device=feat.device, dtype=feat.dtype) * self.accel_noise_std
+                        torch.randn(N, 3, T, device=feat.device, dtype=feat.dtype) * self.accel_noise_std * 0.5
                     )
+                    # if feat.shape[1] == 18:
+                    #     feat_aug[:, 9:12, :] += (
+                    #         torch.randn(N, 3, T, device=feat.device, dtype=feat.dtype) * self.gyro_noise_std
+                    #         # torch.randn(N, 3, T, device=feat.device, dtype=feat.dtype) * self.gyro_noise_std * 0.5
+                    #     )
+                    #     feat_aug[:, 12:15, :] += (
+                    #         torch.randn(N, 3, T, device=feat.device, dtype=feat.dtype) * self.accel_noise_std
+                    #         # torch.randn(N, 3, T, device=feat.device, dtype=feat.dtype) * self.accel_noise_std * 0.5
+                    #     )
+                    #     feat_aug[:, 15:18, :] += (
+                    #         torch.randn(N, 3, T, device=feat.device, dtype=feat.dtype) * self.accel_noise_std
+                    #         # torch.randn(N, 3, T, device=feat.device, dtype=feat.dtype) * self.accel_noise_std * 0.5
+                    #     )
                     
                 else:
                     assert feat.shape[1] == 6 or feat.shape[1] == 9

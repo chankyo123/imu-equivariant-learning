@@ -56,12 +56,12 @@ if __name__ == "__main__":
     # ----------------------- filter params -----------------------
     filter_group = parser.add_argument_group("filter tuning:")
     
-    filter_group.add_argument("--body_frame", type=str, default=False)  
-    filter_group.add_argument("--use_riekf", type=str, default=False)  
-    filter_group.add_argument("--input_3", type=str, default=False)  
+    filter_group.add_argument("--body_frame", type=str, default="False")  
+    filter_group.add_argument("--use_riekf", type=str, default="False")  
+    filter_group.add_argument("--input_3", type=str, default="False")  
     filter_group.add_argument("--run_data", type=str, default=None)  
     
-    filter_group.add_argument("--use_const_cov", type=str, default=False)
+    filter_group.add_argument("--use_const_cov", type=str, default="False")
     
     
     filter_group.add_argument("--update_freq", type=float, default=20.0)  # (Hz)
@@ -95,12 +95,15 @@ if __name__ == "__main__":
 
     filter_group.add_argument("--meascov_scale", type=float, default=10.0)
 
-    add_bool_arg(
-        filter_group, "initialize_with_vio", default=True
-    )  # initialize state with gt state
-    add_bool_arg(
-        filter_group, "initialize_with_offline_calib", default=False
-    )  # initialize bias state with offline calib or 0
+    # add_bool_arg(
+    #     filter_group, "initialize_with_vio", default=True
+    # )  # initialize state with gt state
+    filter_group.add_argument("--initialize_with_vio", type=str, default="True") 
+    
+    # add_bool_arg(
+    #     filter_group, "initialize_with_offline_calib", default=False
+    # )  # initialize bias state with offline calib or 0
+    filter_group.add_argument("--initialize_with_offline_calib", type=str, default="False") 
 
     filter_group.add_argument(
         "--mahalanobis_fail_scale", type=float, default=0

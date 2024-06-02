@@ -105,16 +105,22 @@ def copy_files_from_other_list(source_directory, all_list_path, destination_dire
 
                 # Copy the file to the destination subdirectory
                 shutil.copy(file_path, destination_subdirectory)
+                # print(file_path)
 
 
 # Directory containing data
-data_directory = "./local_data_bodyframe/tlio_golden"
-save_directory = "./local_data_bodyframe_test_so3_csv/tlio_golden"
+# data_directory = "./local_data_bodyframe/tlio_golden"
+# save_directory = "./local_data_bodyframe_test_so2/tlio_golden"
+# save_directory = "./local_data_bodyframe_test_so2_2/tlio_golden"
+# save_directory = "./local_data_bodyframe_test_so2_fixed_notcsv/tlio_golden"
+
+# data_directory = "./local_data_bodyframe_test_so2/tlio_golden"
+# save_directory = "./local_data_bodyframe_test_so2_csv_pos_quat/tlio_golden"
 # data_directory = "./sim_imu_longerseq_worldframe"
 # save_directory = "./sim_imu_longerseq_worldframe_idso3"
 
-# data_directory = "./sim_imu_longerseq"
-# save_directory = "./sim_imu_longerseq_idso2_fixed2"
+data_directory = "./sim_imu_longerseq"
+save_directory = "./sim_imu_longerseq_idso3"
 
 # train_list_path = os.path.join(data_directory, "train_list.txt") 
 train_list_path = os.path.join(data_directory, "test_list.txt") 
@@ -143,9 +149,12 @@ for idx, subdirectory in enumerate(subdirectories):
         random_roll = np.random.uniform(0, 2 * np.pi, len(subdirectories))
         random_pitch = np.random.uniform(0, 2 * np.pi, len(subdirectories))
         
-        #so2 rotation : roll == pitch == 0
+        # #so2 rotation : roll == pitch == 0
         # random_roll[idx] = 0
         # random_pitch[idx] = 0
+        # random_roll[idx] = np.pi/2
+        # random_pitch[idx] = 0
+        # random_theta[idx] = 0
         
         # rotation_matrix = rand_rotation_matrix(random_theta[idx])
         # neg_rotation_matrix = rand_rotation_matrix(-1*random_theta[idx])
@@ -158,16 +167,13 @@ for idx, subdirectory in enumerate(subdirectories):
         rotated_acceleration = apply_rotation(original_data[:, 4:7], rotation_matrix)
         quaternion = original_data[:, 7:11]
         r = Rotation.from_quat(quaternion)
-        r = r.as_matrix()
-        # rotated_quaternion = apply_rotation(r, rotation_matrix)
-        rotated_quaternion = apply_rotation(neg_rotation_matrix,r)
-        r = Rotation.from_matrix(rotated_quaternion)
-        rotated_quaternion = r.as_quat()
-        # print(rotated_quaternion[0,:])
+        r_vec = r.as_rotvec()
         
         rotated_position = apply_rotation(original_data[:, 11:14], rotation_matrix)
         rotated_velocity = apply_rotation(original_data[:, 14:17], rotation_matrix)
-
+        rotated_r_vec = apply_rotation(r_vec, rotation_matrix)
+        rotated_quaternion = Rotation.from_rotvec(rotated_r_vec)
+        rotated_quaternion = rotated_quaternion.as_quat()
         # Concatenate the time column and rotated data
         rotated_data = np.concatenate([original_data[:, :1], rotated_gyroscope, rotated_acceleration,
                                     rotated_quaternion, rotated_position, rotated_velocity], axis=1)
@@ -178,7 +184,7 @@ for idx, subdirectory in enumerate(subdirectories):
             os.makedirs(path)
         np.save(os.path.join(path, "imu0_resampled.npy"), rotated_data)
     
-    csv_file_path = os.path.join(subdirectory_path, "imu_samples_0.csv")
+    csv_file_path = os.path.join(subdirectory_path, "imu_samples_calibrated.csv")
     if os.path.exists(csv_file_path):
         df = pd.read_csv(csv_file_path)
         if df.shape[1] >= 7:  # Ensure the CSV file has enough columns
@@ -195,8 +201,7 @@ for idx, subdirectory in enumerate(subdirectories):
             df.iloc[:, 5:8] = rotated_acc_data
             
             # Save the rotated CSV data
-            # rotated_csv_path = os.path.join(save_directory, subdirectory, "imu_samples_0.csv")
-            rotated_csv_path = os.path.join(save_directory, subdirectory, "imu_samples_0.csv")
+            rotated_csv_path = os.path.join(save_directory, subdirectory, "imu_samples_calibrated.csv")
 
             df.to_csv(rotated_csv_path, index=False)
     print(path)
@@ -220,6 +225,7 @@ for subdir in os.listdir(data_directory):
 
                     # Copy the file to the destination subdirectory
                     shutil.copy(file_path, destination_subdirectory)
+                    print(file_path)
 
 copy_files_from_other_list(data_directory, all_list_path, save_directory)
 

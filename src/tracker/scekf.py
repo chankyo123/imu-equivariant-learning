@@ -508,9 +508,10 @@ class ImuMSCKF:
         #     P = (Adj @ P @ Adj.T)
         
         
-        # N = 3*np.eye(3)
-        # N = 1*np.eye(3)
-        N = 0.1*np.eye(3)
+        # N = 3*np.eye(3) #so3 3으로 해보다가 1로 바꿈
+        N = 1*np.eye(3)
+        # N = 5*np.eye(3)
+        # N = 0.1*np.eye(3)
         # N = 0.01*np.eye(3)
         
         # N = self.meascov_scale * meas_cov

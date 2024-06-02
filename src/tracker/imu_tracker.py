@@ -14,6 +14,7 @@ from utils.dotdict import dotdict
 from utils.from_scipy import compute_euler_from_matrix
 from utils.logging import logging
 from utils.math_utils import mat_exp
+from scipy.spatial.transform import Rotation
 
 
 class ImuTracker:
@@ -208,13 +209,16 @@ class ImuTracker:
 
     def _compensate_measurement_with_initial_calibration(self, gyr_raw, acc_raw):
         if self.icalib:
-            #logging.info("Using bias from initial calibration")
-            init_ba = self.icalib.accelBias
-            init_bg = self.icalib.gyroBias
-            # calibrate raw imu data
-            acc_biascpst, gyr_biascpst = self.icalib.calibrate_raw(
-                acc_raw, gyr_raw
-            )  # removed offline bias and scaled
+            # #logging.info("Using bias from initial calibration")
+            # init_ba = self.icalib.accelBias
+            # init_bg = self.icalib.gyroBias
+            # # calibrate raw imu data
+            # acc_biascpst, gyr_biascpst = self.icalib.calibrate_raw(
+            #     acc_raw, gyr_raw
+            # )  # removed offline bias and scaled
+            init_ba = np.zeros((3, 1))
+            init_bg = np.zeros((3, 1))
+            acc_biascpst, gyr_biascpst = acc_raw, gyr_raw
         else:
             #logging.info("Using zero bias")
             init_ba = np.zeros((3, 1))
@@ -283,17 +287,19 @@ class ImuTracker:
         if self.icalib:
             # calibrate raw imu data with offline calibation
             # this is used for network feeding
-            acc_biascpst, gyr_biascpst = self.icalib.calibrate_raw(
-                acc_raw, gyr_raw
-            )  # removed offline bias and scaled
+            # acc_biascpst, gyr_biascpst = self.icalib.calibrate_raw(
+            #     acc_raw, gyr_raw
+            # )  # removed offline bias and scaled
 
-            # calibrate raw imu data with offline calibation scale
-            # this is used for the filter. By not applying offline bias
-            # we expect the filter to estimate bias similar to the offline
-            # calibrated one
-            acc_raw, gyr_raw = self.icalib.scale_raw(
-                acc_raw, gyr_raw
-            )  # only offline scaled - into the filter
+            # # calibrate raw imu data with offline calibation scale
+            # # this is used for the filter. By not applying offline bias
+            # # we expect the filter to estimate bias similar to the offline
+            # # calibrated one
+            # acc_raw, gyr_raw = self.icalib.scale_raw(
+            #     acc_raw, gyr_raw
+            # )  # only offline scaled - into the filter
+            acc_biascpst = acc_raw
+            gyr_biascpst = gyr_raw
         else:
             acc_biascpst = acc_raw
             gyr_biascpst = gyr_raw
@@ -392,9 +398,13 @@ class ImuTracker:
             )
             
             if self.input_3:
+                # input_4 = True
+                input_4 = False
                 
                 num_data = net_gyr_w.shape[0]
                 net_vel_body = np.empty((0, 3))
+                
+                net_ori_b2w = np.empty((0, 9))
                 
                 vio_data = np.load(self.vio_path)
                 ts_data = np.array(self.filter.state.si_timestamps_us)
@@ -409,20 +419,45 @@ class ImuTracker:
                         index = round(vio_data[:, 0].shape[0] * ((timestamp - t_start_us1) / (t_end_us1 - t_start_us1)))
                         if index >= len(vio_data):
                             v_past2 = vio_data[-1,-3:]  # using imu0_resampled.npy
+                            if input_4:
+                                R_past = vio_data[-1,-10:-6]
+                                print("here")
+                                R_past_matrix = Rotation.from_quat(R_past).as_matrix()
+                                ori_column1 = R_past_matrix[:,0].reshape(3)
+                                ori_column2 = R_past_matrix[:,1].reshape(3)
+                                ori_column3 = R_past_matrix[:,2].reshape(3)
+                                stack_ori = np.hstack((ori_column1, ori_column2, ori_column3))
+
                         else:
                             v_past2 = vio_data[index,-3:]  # using imu0_resampled.npy
+                            if input_4:
+                                R_past = vio_data[index,-10:-6]
+                                R_past_matrix = Rotation.from_quat(R_past).as_matrix()
+                                ori_column1 = R_past_matrix[:,0].reshape(3)
+                                ori_column2 = R_past_matrix[:,1].reshape(3)
+                                ori_column3 = R_past_matrix[:,2].reshape(3)
+                                stack_ori = np.hstack((ori_column1, ori_column2, ori_column3))
                         v_at_timestamp_bd = v_past2
                     else:
                         # print("i :  ", i)
                         v_at_timestamp = v_data[5*(-200+i), :]
                         v_at_timestamp_bd = v_at_timestamp
                         
+                        R_at_timestamp = R_data[5*(-200+i), :, :]
+                        ori_column1 = R_at_timestamp[:,0].reshape(3)
+                        ori_column2 = R_at_timestamp[:,1].reshape(3)
+                        ori_column3 = R_at_timestamp[:,2].reshape(3)
+                        stack_ori = np.hstack((ori_column1, ori_column2, ori_column3))
+
                     net_vel_body = np.vstack((net_vel_body, v_at_timestamp_bd.reshape(3)))
+                    if input_4:
+                        net_ori_b2w = np.vstack((net_ori_b2w, stack_ori.reshape(9)))
+                        
             else:
                 net_vel_body = None                        
-                
+               
             meas, meas_cov = self.meas_source.get_displacement_measurement(
-                net_gyr_w, net_acc_w, net_vel_body, self.input_3
+                net_gyr_w, net_acc_w, net_vel_body, net_ori_b2w, self.input_3, input_4
             )
             
         #for equiv-cov

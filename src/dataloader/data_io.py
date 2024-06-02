@@ -34,7 +34,8 @@ class DataIO:
         """
         load timestamps, accel and gyro data from dataset
         """
-        imu_data = pd.read_csv(osp.join(args.root_dir, dataset, "imu_samples_0.csv"))
+        # imu_data = pd.read_csv(osp.join(args.root_dir, dataset, "imu_samples_0.csv"))
+        imu_data = pd.read_csv(osp.join(args.root_dir, dataset, "imu_samples_calibrated.csv"))
         ts_all = np.copy(imu_data.iloc[:,0]) * 1e-3
         gyr_all = np.copy(imu_data.iloc[:,2:5])
         acc_all = np.copy(imu_data.iloc[:,5:8])

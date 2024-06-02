@@ -60,6 +60,18 @@ if __name__ == "__main__":
         default=f"0",
         help="choose among 1~4",
     )
+    io_groups.add_argument(
+        "--initialize_with_offline_calib",
+        type=str,
+        default=f"True",
+        help="initialize with offline calib",
+    )
+    io_groups.add_argument(
+        "--initialize_with_vio",
+        type=str,
+        default=f"True",
+        help="initialize with vio",
+    )
     args = parser.parse_args()
 
     all_models = list(Path.cwd().glob(args.model_globbing))
@@ -99,7 +111,10 @@ if __name__ == "__main__":
                 "--save_as_npy",
                 "--meascov_scale",
                 f"{meascov_scale}",
+                "--initialize_with_vio",
+                f"{args.initialize_with_vio}",
                 "--initialize_with_offline_calib",
+                f"{args.initialize_with_offline_calib}",
                 "--update_freq",
                 f"{update_frequency}",
                 "--body_frame",

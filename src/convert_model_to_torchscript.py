@@ -16,7 +16,10 @@ def load_and_convert(args):
     net_config = {"in_dim": (past_data_size + disp_window_size) // 32 + 1}
     
     # input_dim = 6 #6D IMU Input
-    input_dim = 9 #9D Input : 6D IMU Input + velocity input
+    # input_dim = 9 #9D Input : 6D IMU Input + velocity input
+    # input_dim = 18  #18D Input : 6D IMU Input + velocity input + orientation input
+    input_dim = args.input_dim
+    
     net = get_model(args.arch, net_config, input_dim, 3)
     
     # load trained network model
@@ -53,6 +56,7 @@ if __name__ == "__main__":
     io_groups.add_argument("--model_path", required=True, type=str, default=None)
     io_groups.add_argument("--model_param_path", required=True, type=str, default=None)
     io_groups.add_argument("--out_dir", type=str, default="./")
+    io_groups.add_argument("--input_dim", type=int, default=6)
 
     parser.add_argument("--cpu", type=bool, default=False)
     args = parser.parse_args()

@@ -50,7 +50,10 @@ class ImuTrackerRunner:
         self.f_debug = open(os.path.join(outdir, "debug.txt"), "w")
         logging.info(f"writing to {outfile}")
 
-        imu_calib = ImuCalib.from_offline_calib(dataset, args)
+        if "sim" not in args.root_dir:
+            imu_calib = ImuCalib.from_offline_calib(dataset, args)
+        else:
+            imu_calib = None
 
         filter_tuning = dotdict(
             {
@@ -76,8 +79,13 @@ class ImuTrackerRunner:
                 "use_const_cov": eval(args.use_const_cov),
             }
         )
-
-        match = re.search(r'/(\d{15,16})/', self.outfile)
+        if "sim" not in args.root_dir:
+            match = re.search(r'/(\d{15,16})/', self.outfile)
+            replace_string = "./../local_data_bodyframe/tlio_golden/146734859523827/imu0_resampled.npy"
+        else:
+            match = re.search(r'/(\d{1,3})/', self.outfile)
+            replace_string = "./../sim_imu_longerseq/1/imu0_resampled.npy"
+            
         if match:
             extracted_string = match.group(1)
             # print("Extracted string:", extracted_string)
@@ -85,9 +93,12 @@ class ImuTrackerRunner:
             extracted_string = None
             print("No match found")
 
-        replace_string = "./../local_data_bodyframe/tlio_golden/146734859523827/imu0_resampled.npy"
         if extracted_string:
-            vio_path = re.sub(r'/\d{15,16}/', f'/{extracted_string}/', replace_string)
+            if "sim" not in args.root_dir:
+                vio_path = re.sub(r'/\d{15,16}/', f'/{extracted_string}/', replace_string)
+            else:
+                # vio_path = re.sub(r'/(?:[1-9]|[1-9][0-9]|[1-3][0-9][0-9]|400)/', f'/{extracted_string}/', replace_string)
+                vio_path = re.sub(r'/\d{1,3}/', f'/{extracted_string}/', replace_string)
             # print("Generated vio_path:", vio_path)
         else:
             print("Cannot generate vio_path as no extracted string was found")
@@ -181,7 +192,7 @@ class ImuTrackerRunner:
             logging.info(f"Re-initialize filter at first update")
             self.reset_filter_state_pv(args.input_3, args.use_riekf)
 
-        if args.initialize_with_vio:
+        if eval(args.initialize_with_vio):
             self.tracker.callback_first_update = initialize_with_vio_at_first_update
         else:
             self.tracker.callback_first_update = initialize_at_first_update
@@ -227,10 +238,10 @@ class ImuTrackerRunner:
                     )
             else:
                 # initialize to gt state R,v,p and offline calib
-                if not args.initialize_with_vio:
+                if not eval(args.initialize_with_vio):
                     self.tracker.on_imu_measurement(t_us, gyr_raw, acc_raw)
                 else:
-                    if args.initialize_with_offline_calib:
+                    if eval(args.initialize_with_offline_calib):
                         init_ba = self.tracker.icalib.accelBias
                         init_bg = self.tracker.icalib.gyroBias
                     else:

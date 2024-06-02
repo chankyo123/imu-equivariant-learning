@@ -13,6 +13,8 @@ def delete_files_except(directory, exceptions):
 # Replace 'your_directory' with the path to your target directory
 # directory_path = '/workspace/imu-equivariant-learning/batch_filter_outputs_uf10/resnet/'
 directory_path = '/workspace/imu-equivariant-learning/batch_filter_outputs_uf10/res_2res_nodrop/'
+directory_path = '/workspace/imu-equivariant-learning/batch_filter_outputs_idso2_uf10/idso2_resnet_2/'
+directory_path = '/workspace/imu-equivariant-learning/batch_filter_outputs_idso2_uf10/idso2_eq_2res_200hz_3input_mselss_0.5_pertb/'
 # List of files to keep in each subdirectory
 files_to_keep = ['debug.txt', 'not_vio_state.txt.npy', 'metrics.json', 'parameters.json']
 

@@ -301,18 +301,23 @@ def run(args, dataset):
             vio_euls = vio_r.as_euler("xyz", degrees=True)
             
             vio_calib_ts = vio_ts
-
-            with open(osp.join(args.root_dir, dataset, "calibration.json"), 'r') as f:
-                calib_json = json.load(f)
-                
-            accelBias = np.array(calib_json["Accelerometer"]["Bias"]["Offset"])[None,:]
-            gyroBias = np.array(calib_json["Gyroscope"]["Bias"]["Offset"])[None,:]
-            accelScaleInv = np.array(
-                calib_json["Accelerometer"]["Model"]["RectificationMatrix"]
-            )[None,:,:]
-            gyroScaleInv = np.array(
-                calib_json["Gyroscope"]["Model"]["RectificationMatrix"]
-            )[None,:,:]
+            if "sim" not in args.root_dir:
+                with open(osp.join(args.root_dir, dataset, "calibration.json"), 'r') as f:
+                    calib_json = json.load(f)
+                    
+                accelBias = np.array(calib_json["Accelerometer"]["Bias"]["Offset"])[None,:]
+                gyroBias = np.array(calib_json["Gyroscope"]["Bias"]["Offset"])[None,:]
+                accelScaleInv = np.array(
+                    calib_json["Accelerometer"]["Model"]["RectificationMatrix"]
+                )[None,:,:]
+                gyroScaleInv = np.array(
+                    calib_json["Gyroscope"]["Model"]["RectificationMatrix"]
+                )[None,:,:]
+            else:
+                accelBias = 0
+                gyroBias = 0
+                accelScaleInv = None
+                gyroScaleInv = None
 
             vio_pj_idx = np.searchsorted(vio_ts, ts) - 1
             vio_pi_idx = np.searchsorted(vio_ts, ts - args.displacement_time) - 1
@@ -348,27 +353,38 @@ def run(args, dataset):
             vio_p = interp1d(vio_ts, vio_p, axis=0)(ts)
             vio_v = interp1d(vio_ts, vio_v, axis=0)(ts)
 
-            accelScaleInv_flat = accelScaleInv.reshape((1, 9))
-            gyroScaleInv_flat = gyroScaleInv.reshape((1, 9))
+            if "sim" not in args.root_dir:
+                accelScaleInv_flat = accelScaleInv.reshape((1, 9))
+                gyroScaleInv_flat = gyroScaleInv.reshape((1, 9))
+                accelScaleInv_flat = np.tile(accelScaleInv_flat, [ts.shape[0], 1])
+                gyroScaleInv_flat = np.tile(gyroScaleInv_flat, [ts.shape[0], 1])
+                accelScaleInv = accelScaleInv_flat.reshape((-1, 3, 3))
+                gyroScaleInv = gyroScaleInv_flat.reshape((-1, 3, 3))
+            else:
+                accelScaleInv_flat = np.zeros((vio_euls.shape[0],9))
+                gyroScaleInv_flat = np.zeros((vio_euls.shape[0],9))
+                
 
             # We only have offline calib so just repeat it for all the timestamps
             ba = np.tile(accelBias, [ts.shape[0], 1])
             bg = np.tile(gyroBias, [ts.shape[0], 1])
-            accelScaleInv_flat = np.tile(accelScaleInv_flat, [ts.shape[0], 1])
-            gyroScaleInv_flat = np.tile(gyroScaleInv_flat, [ts.shape[0], 1])
-            accelScaleInv = accelScaleInv_flat.reshape((-1, 3, 3))
-            gyroScaleInv = gyroScaleInv_flat.reshape((-1, 3, 3))
+            
 
             # This compute bias in non scaled sensor frame (I think)
             ba_temp = np.expand_dims(ba, axis=-1)
             bg_temp = np.expand_dims(bg, axis=-1)
-            ba_b = np.squeeze(
-                np.matmul(np.linalg.inv(accelScaleInv), ba_temp)
-            )
-            bg_b = np.squeeze(
-                np.matmul(np.linalg.inv(gyroScaleInv), bg_temp)
-            )
-
+            if "sim" not in args.root_dir:
+                ba_b = np.squeeze(
+                    np.matmul(np.linalg.inv(accelScaleInv), ba_temp)
+                )
+                bg_b = np.squeeze(
+                    np.
+                    matmul(np.linalg.inv(gyroScaleInv), bg_temp)
+                )
+                
+            else:
+                ba_b = np.zeros((vio_euls.shape[0],3))
+                bg_b = np.zeros((vio_euls.shape[0],3))
             if save_vio_states:
                 vio_states = np.concatenate(
                     [
@@ -753,25 +769,25 @@ def run(args, dataset):
         sigma_r[idxs, :],
         color=color_filter,
     )
-    fig4 = plot_state_euclidean(
-        "accel bias",
-        "filter",
-        ["ba_x", "ba_y", "ba_z"],
-        ts[idxs],
-        ba[idxs, :],
-        sigma_ba[idxs, :],
-        color=color_filter,
-    )
+    # fig4 = plot_state_euclidean(
+    #     "accel bias",
+    #     "filter",
+    #     ["ba_x", "ba_y", "ba_z"],
+    #     ts[idxs],
+    #     ba[idxs, :],
+    #     sigma_ba[idxs, :],
+    #     color=color_filter,
+    # )
 
-    fig5 = plot_state_euclidean(
-        "gyro bias",
-        "filter",
-        ["bg_x", "bg_y", "bg_z"],
-        ts[idxs],
-        bg[idxs, :],
-        sigma_bg[idxs, :],
-        color=color_filter,
-    )
+    # fig5 = plot_state_euclidean(
+    #     "gyro bias",
+    #     "filter",
+    #     ["bg_x", "bg_y", "bg_z"],
+    #     ts[idxs],
+    #     bg[idxs, :],
+    #     sigma_bg[idxs, :],
+    #     color=color_filter,
+    # )
     # plot integrated speed output
     # plot_state_euclidean(
     #     "position",
@@ -805,38 +821,38 @@ def run(args, dataset):
         ref_euls[idxs, :],
         color=color_vio,
     )
-    plot_state_euclidean(
-        "accel bias",
-        ref_type,
-        ["ba_x", "ba_y", "ba_z"],
-        ts[idxs],
-        ref_ba[idxs, :],
-        color=color_vio,
-    )
-    plot_state_euclidean(
-        "accel bias",
-        ref_type + "b",
-        ["ba_x", "ba_y", "ba_z"],
-        ts[idxs],
-        ba_b[idxs, :],
-        color=color_vio,
-    )
-    plot_state_euclidean(
-        "gyro bias",
-        ref_type,
-        ["bg_x", "bg_y", "bg_z"],
-        ts[idxs],
-        ref_bg[idxs, :],
-        color=color_vio,
-    )
-    plot_state_euclidean(
-        "gyro bias",
-        ref_type + "b",
-        ["bg_x", "bg_y", "bg_z"],
-        ts[idxs],
-        bg_b[idxs, :],
-        color=color_vio,
-    )
+    # plot_state_euclidean(
+    #     "accel bias",
+    #     ref_type,
+    #     ["ba_x", "ba_y", "ba_z"],
+    #     ts[idxs],
+    #     ref_ba[idxs, :],
+    #     color=color_vio,
+    # )
+    # plot_state_euclidean(
+    #     "accel bias",
+    #     ref_type + "b",
+    #     ["ba_x", "ba_y", "ba_z"],
+    #     ts[idxs],
+    #     ba_b[idxs, :],
+    #     color=color_vio,
+    # )
+    # plot_state_euclidean(
+    #     "gyro bias",
+    #     ref_type,
+    #     ["bg_x", "bg_y", "bg_z"],
+    #     ts[idxs],
+    #     ref_bg[idxs, :],
+    #     color=color_vio,
+    # )
+    # plot_state_euclidean(
+    #     "gyro bias",
+    #     ref_type + "b",
+    #     ["bg_x", "bg_y", "bg_z"],
+    #     ts[idxs],
+    #     bg_b[idxs, :],
+    #     color=color_vio,
+    # )
     # plot RONIN
     if args.ronin_dir is not None:
         plot_state_euclidean(
@@ -918,37 +934,37 @@ def run(args, dataset):
     # Plot the error in covariance
 
     meas_err_update = meas_update - ref_disp_update
-    fig8 = plot_error_euclidean(
-        "displace measurement errors",
-        "meas-err",
-        ["x", "y", "z"],
-        ts_update,
-        meas_err_update,
-        meas_sigma_update,
-    )
-    plot_error_euclidean(
-        "displace measurement errors",
-        "pred-err",
-        ["x", "y", "z"],
-        ts_update,
-        pred_update - ref_disp_update,
-        meas_sigma_update,
-    )
-    for ax in fig8.axes:
-        ax.set_ylim([-0.5, 0.5])
+    # fig8 = plot_error_euclidean(
+    #     "displace measurement errors",
+    #     "meas-err",
+    #     ["x", "y", "z"],
+    #     ts_update,
+    #     meas_err_update,
+    #     meas_sigma_update,
+    # )
+    # plot_error_euclidean(
+    #     "displace measurement errors",
+    #     "pred-err",
+    #     ["x", "y", "z"],
+    #     ts_update,
+    #     pred_update - ref_disp_update,
+    #     meas_sigma_update,
+    # )
+    # for ax in fig8.axes:
+    #     ax.set_ylim([-0.5, 0.5])
 
-    # display measurement error autocorellation (SLOW)
-    fig8b = plt.figure("autocorellation of measurement error")
-    logging.warning("We assume update frequency at 20hz for autocorrelation")
-    for i in range(3):
-        plt.subplot(3, 1, i + 1)
-        plt.acorr(meas_err_update[:, i], maxlags=100, lw=2)
-        locs, labels = plt.xticks()  # Get locations and labels
-        for (l, t) in zip(locs, labels):
-            t.set_text(str(l / 20.0) + "s")
-        plt.xticks(locs, labels)  # Set locations and labels
-        plt.xlim(left=0)
-        plt.grid()
+    # # display measurement error autocorellation (SLOW)
+    # fig8b = plt.figure("autocorellation of measurement error")
+    # logging.warning("We assume update frequency at 20hz for autocorrelation")
+    # for i in range(3):
+    #     plt.subplot(3, 1, i + 1)
+    #     plt.acorr(meas_err_update[:, i], maxlags=100, lw=2)
+    #     locs, labels = plt.xticks()  # Get locations and labels
+    #     for (l, t) in zip(locs, labels):
+    #         t.set_text(str(l / 20.0) + "s")
+    #     plt.xticks(locs, labels)  # Set locations and labels
+    #     plt.xlim(left=0)
+    #     plt.grid()
 
     fig9 = plot_error_euclidean(
         "position error",
@@ -977,22 +993,22 @@ def run(args, dataset):
         sigma_r[idxs, :],
     )
 
-    fig12 = plot_error_euclidean(
-        "accel bias error",
-        ref_type,
-        ["ba_x", "ba_y", "ba_z"],
-        ts[idxs],
-        ba[idxs, :] - ref_ba[idxs, :],
-        sigma_ba[idxs, :],
-    )
-    fig13 = plot_error_euclidean(
-        "gyros bias error",
-        ref_type,
-        ["bg_x", "bg_y", "bg_z"],
-        ts[idxs],
-        bg[idxs, :] - ref_bg[idxs, :],
-        sigma_bg[idxs, :],
-    )
+    # fig12 = plot_error_euclidean(
+    #     "accel bias error",
+    #     ref_type,
+    #     ["ba_x", "ba_y", "ba_z"],
+    #     ts[idxs],
+    #     ba[idxs, :] - ref_ba[idxs, :],
+    #     sigma_ba[idxs, :],
+    # )
+    # fig13 = plot_error_euclidean(
+    #     "gyros bias error",
+    #     ref_type,
+    #     ["bg_x", "bg_y", "bg_z"],
+    #     ts[idxs],
+    #     bg[idxs, :] - ref_bg[idxs, :],
+    #     sigma_bg[idxs, :],
+    # )
 
     if args.save_fig:
         if not save_vio_states:
@@ -1003,16 +1019,16 @@ def run(args, dataset):
                 fig1.savefig(osp.join(results_folder, "position." + save_as))
                 fig2.savefig(osp.join(results_folder, "velocity." + save_as))
                 fig3.savefig(osp.join(results_folder, "rotation." + save_as))
-                fig4.savefig(osp.join(results_folder, "acc-bias." + save_as))
-                fig5.savefig(osp.join(results_folder, "gyr-bias." + save_as))
+                # fig4.savefig(osp.join(results_folder, "acc-bias." + save_as))
+                # fig5.savefig(osp.join(results_folder, "gyr-bias." + save_as))
                 fig6.savefig(osp.join(results_folder, "innovation." + save_as))
                 fig7.savefig(osp.join(results_folder, "displacement." + save_as))
-                fig8.savefig(osp.join(results_folder, "displacement-err." + save_as))
+                # fig8.savefig(osp.join(results_folder, "displacement-err." + save_as))
                 fig9.savefig(osp.join(results_folder, "position-err." + save_as))
                 fig10.savefig(osp.join(results_folder, "velocity-err." + save_as))
                 fig11.savefig(osp.join(results_folder, "rotation-err." + save_as))
-                fig12.savefig(osp.join(results_folder, "acc-bias-err." + save_as))
-                fig13.savefig(osp.join(results_folder, "gyr-bias-err." + save_as))
+                # fig12.savefig(osp.join(results_folder, "acc-bias-err." + save_as))
+                # fig13.savefig(osp.join(results_folder, "gyr-bias-err." + save_as))
                 fig14.savefig(osp.join(results_folder, "position-2d." + save_as))
                 fig15.savefig(osp.join(results_folder, "position-3d." + save_as))
             # # also save as pickle just in case (TOO LARGE)

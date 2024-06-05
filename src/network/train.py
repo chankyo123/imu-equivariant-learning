@@ -537,7 +537,7 @@ def net_train(args):
         else:
             save_model(args, epoch, network, optimizer, best=False)
             
-        if epoch in {8,9,19,29,39,49, 80, 90, 99, 109, 119, 129, 139, 149, 159, 199}:
+        if epoch in {8,9,19,49, 80, 90, 95, 96, 98, 99, 109, 119, 129, 149, 159, 179, 189, 195, 199}:
             save_model(args, epoch, network, optimizer, best=False, interrupt=False)
     
     mean_epoch_time = np.mean(consumed_times)

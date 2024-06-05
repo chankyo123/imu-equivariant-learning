@@ -30,10 +30,21 @@ json_file = json_file.replace(old_part, new_part)
 # json_file = "./batch_filter_outputs_uf10/eq_2res_mselss_0.5_pertb_N_1_uf10/eq_2res_200hz_3input_mselss_0.5_pertb/metrics.json"  #3.1010206447 / 0.1599918932  << -- 이게 젤 좋은 듯
 # json_file = "./batch_filter_outputs_uf10/eq_2res_mselss_0.5_pertb_epmore2_N_1_uf10/models-eq_2res_200hz_3input_mselss_0.5_pertb_ep_more2/metrics.json"  #5.137939965969 / 0.173423
 
+json_file = "./batch_filter_outputs_uf10/models-resnet/metrics.json"  #1.707228 / 0.127829753  / 156
+json_file = "./batch_filter_outputs_uf10/use_meas_cov_bd_uf10/eq_2res_200hz_3input_samelss_TLIO/metrics.json"  #3.9676 / 0.323602
+
+# json_file = "../TLIO/batch_filter_outputs_uf10/eq_2res_mselss_0.5_pertb_uf10/eq_2res_200hz_3input_mselss_0.5_pertb/metrics.json"  # 2.98538 / 0.18595 / 161.202913
+
 # json_file = "batch_test_outputs/resnet/metrics.json"   #1.84603557 / 2.2383225
 # json_file = "../TLIO/batch_test_outputs/resnet/metrics.json"   #1.817235 / 2.18
 
 # json_file = "batch_test_outputs/res_2res_nodrop/metrics.json"   #2.233789 / 2.6531212284
+# json_file = "batch_test_outputs/eq_2res_200hz_3input_ep49/metrics.json"   #4.56303 / 5.121736
+# json_file = "batch_test_outputs/eq_2res_200hz_3input_samelss_TLIO/metrics.json"   #3.808783 / 4.310868
+# json_file = "batch_test_outputs/eq_2res_200hz_4input/metrics.json"   #3.46013 / 3.9097141
+# json_file = "batch_test_outputs/eq_2res_200hz_4input_ep123/metrics.json"   #3.37680 /  3.83612111
+# json_file = "batch_test_outputs/eq_2res_200hz_4input_ep200/metrics.json"   #3.335885 /  3.78153
+# json_file = "batch_test_outputs/eq_2res_200hz_3input_mselss_0.5_pertb/metrics.json"   #3.1371065 / 3.4769123
 
 # json_file = "batch_test_outputs/sim_body_previous_idso2/metrics.json"   #10.01756400 / 11.385903673970976
 # json_file = "batch_test_outputs/delete_idso2_fixed2/metrics.json"   #9.89564424 / 11.2994975213
@@ -90,6 +101,8 @@ json_file = "batch_test_outputs/idso3_eq_2res_200hz_3input_mselss_0.5_pertb_ep_m
 # json_file = "batch_test_outputs/sim_idso3_eq_2res_200hz_3input_samelss_TLIO/metrics.json"   #44.121510 /  50.42309706628    / 1.06438146
 # json_file = "batch_test_outputs/sim_idso3_eq_2res_200hz_3input_mselss/metrics.json"   #47.724336 /  54.6730013 / 0.9397254191339016
 # json_file = "batch_test_outputs/sim_eq_2res_200hz_3input_samelss_TLIO/metrics.json"   #12.6049 / 14.20915
+json_file = "batch_test_outputs/eq_2res_200hz_3input_mselss_0.5_pertb_ep200/metrics.json"   #2.813362 / 3.060839  <---- 이게 제일 좋은듯
+# json_file = "batch_test_outputs/eq_2res_200hz_3input_mselss_nodetach/metrics.json"   #5.0732262 / 5.71939  <---- 이게 제일 좋은듯
 
 
 # json_file = "batch_test_outputs/eq_2res_200hz_3input_mselss/metrics.json"
@@ -107,7 +120,9 @@ rmse_values = []
 rmse_vel_values = []
 
 for key, value in data.items():
-    # Access the "ronin" dictionary
+    # if key in ("2100421890282669", "2142509999304237", "2142577795957193"):
+    #     continue
+    
     # filter_dict = value.get("filter")
     filter_dict = value.get("ronin")
     

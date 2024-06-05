@@ -195,8 +195,11 @@ for idx, subdirectory in enumerate(subdirectories):
             rotated_gyro_data = apply_rotation(gyro_data, rotation_matrix)
             rotated_acc_data = apply_rotation(acc_data, rotation_matrix)
             
+            rotated_gyro_data = np.around(rotated_gyro_data, decimals=7)
+            rotated_acc_data = np.around(rotated_acc_data, decimals=7)
+            
             # Replace the original data with the rotated data
-            df.iloc[:, 0:2] = df.iloc[:, 0:2].values
+            # df.iloc[:, 0:2] = df.iloc[:, 0:2].values
             df.iloc[:, 2:5] = rotated_gyro_data
             df.iloc[:, 5:8] = rotated_acc_data
             

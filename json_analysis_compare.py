@@ -4,6 +4,9 @@ import json
 json_file1 = "batch_filter_outputs_uf10/eq_2res_epmore2_N_1_uf10/eq_2res_200hz_3input_ep_more2/metrics.json"
 json_file2 = "../TLIO/batch_filter_outputs_uf20/models-resnet/metrics.json" 
 
+json_file1 = "../TLIO/batch_filter_outputs_uf10/eq_2res_mselss_0.5_pertb_uf10/eq_2res_200hz_3input_mselss_0.5_pertb/metrics.json"  # 2.98538 / 0.18595 / 161.202913
+json_file2 = "./batch_filter_outputs_uf10/models-resnet/metrics.json" 
+
 # Read and parse the JSON data from both files
 with open(json_file1, "r") as f1, open(json_file2, "r") as f2:
     data1 = json.load(f1)
@@ -17,7 +20,8 @@ def extract_metrics(data):
         filter_dict = value.get("filter")
         if filter_dict:
             ate_value = filter_dict.get("ate")
-            rpe_rmse_1000_value = filter_dict.get("rpe_rmse_100000")
+            # rpe_rmse_1000_value = filter_dict.get("rpe_rmse_100000")
+            rpe_rmse_1000_value = filter_dict.get("angular_drift_deg_hour")
             if ate_value is not None and rpe_rmse_1000_value is not None:
                 results[sequence_name] = (ate_value, rpe_rmse_1000_value)
     
@@ -33,7 +37,8 @@ sequence_names = sorted(set(results1.keys()).intersection(set(results2.keys())))
 # Print values in one row
 print(f"JSON File 1: {json_file1}")
 for sequence_name in sequence_names:
-    if sequence_name not in ("263070267597787", "286510035288905", "1014753008676428", "1718648064889757"):
+    # if sequence_name not in ("263070267597787", "286510035288905", "1014753008676428", "1718648064889757"):
+    if sequence_name not in ():
         ate1, rpe1 = results1[sequence_name]
         ate2, rpe2 = results2[sequence_name]
         ate_diff = ate1 - ate2

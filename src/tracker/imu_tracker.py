@@ -16,7 +16,6 @@ from utils.logging import logging
 from utils.math_utils import mat_exp
 from scipy.spatial.transform import Rotation
 
-
 class ImuTracker:
     """
     ImuTracker is responsible for feeding the EKF with the correct data
@@ -421,7 +420,6 @@ class ImuTracker:
                             v_past2 = vio_data[-1,-3:]  # using imu0_resampled.npy
                             if input_4:
                                 R_past = vio_data[-1,-10:-6]
-                                print("here")
                                 R_past_matrix = Rotation.from_quat(R_past).as_matrix()
                                 ori_column1 = R_past_matrix[:,0].reshape(3)
                                 ori_column2 = R_past_matrix[:,1].reshape(3)

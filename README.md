@@ -1,6 +1,6 @@
 # IMU Equivariant Learning: A yaw-Equivariant Network-Coupled Inertial Odometry
 
-Created by Chankyo Kim, Minghan Zhu, and <a href="https://curly.engin.umich.edu/people#h.7jd25w55csv" target="_blank">Maani Ghaffari</a>.
+Created by Chankyo Kim, Tzu-Yuan Lin, Minghan Zhu, and <a href="https://curly.engin.umich.edu/people#h.7jd25w55csv" target="_blank">Maani Ghaffari</a>.
 
 ## Overview
 We introduce a yaw-equivariannt Network-Coupled Inertial Odemetry with creating fully SO(3) equivariant neural networks from conventional neural networks. Through the equivariant network, we get better generalization of displacement estimation without considering distribution of IMU measurement data, any other augmentations in data and architecture. [paper in preparation]

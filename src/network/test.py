@@ -95,7 +95,6 @@ def pose_integrate(args, dataset, preds, use_pred_vel, body_frame):
         
         vel_world_gt= vel_body_gt
     else:
-        print("here")
         dp_t = args.window_time
         pred_vels = preds / dp_t
     #dts = np.mean(ts[ind_intg[1:]] - ts[ind_intg[:-1]])
@@ -104,10 +103,13 @@ def pose_integrate(args, dataset, preds, use_pred_vel, body_frame):
     pos_intg = np.zeros([pred_vels.shape[0], args.output_dim])
     #pos_intg[0] = pos_gt[0]
     if use_pred_vel:
-        if 'sim' in args.root_dir:
-            displacement_intg = np.cumsum(pred_vels[:, :] * dts * 1000000, axis=0)
+        if "sim_imu_longerseq/"==args.root_dir:
+            displacement_intg = np.cumsum(pred_vels[:, :] * dts * 1e6, axis=0)
         else:
             displacement_intg = np.cumsum(pred_vels[:, :] * dts, axis=0)
+            
+            
+        
             
         # displacement_intg = np.cumsum(pred_vels[:, :] * dts, axis=0)
         
@@ -115,10 +117,8 @@ def pose_integrate(args, dataset, preds, use_pred_vel, body_frame):
         # print(r_gt.as_matrix()[0,:,:])
         # displacement_intg = np.einsum('jk,ik->ij', R_z, displacement_intg)
     else:
-        if 'sim' in args.root_dir:
-            displacement_intg = np.cumsum(pred_vels[:, :] * dts * 1000000, axis=0)
-        else:
-            displacement_intg = np.cumsum(pred_vels[:, :] * dts, axis=0)
+        displacement_intg = np.cumsum(pred_vels[:, :] * dts, axis=0)
+            
     pos_intg =  displacement_intg+ pos_gt[0]
 
         # pos_gt = pos_intg_gt + pos_gt[0]
@@ -536,8 +536,6 @@ def get_inference(network, data_loader, device, epoch, body_frame_3regress):
             targ_vel = sample["vel_Body"][:,-1,:]
         else:
             pred, pred_cov = network(feat)
-            # print(feat.shape, pred.shape, pred_cov.shape)  @torch.Size([1024, 9, 200]) torch.Size([1024, 3]) torch.Size([1024, 3])
-            
             pred_vel = pred
             targ_vel =torch.zeros_like(pred_vel)
 
@@ -720,7 +718,11 @@ def net_test(args):
         # body_frame = False
         
         use_pred_vel = eval(args.body_frame)
-        body_frame_3regress = eval(args.body_frame)
+        if "3res" in args.model_path:
+            print("we regress 2 value!!")
+            body_frame_3regress = False
+        else:
+            body_frame_3regress = eval(args.body_frame)
         # body_frame_3regress = False
         body_frame = eval(args.body_frame)
         # Obtain trajectory

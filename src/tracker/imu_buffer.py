@@ -56,22 +56,42 @@ class ImuBuffer:
         return net_acc, net_gyr, net_t_us
 
     # get network data from beginning and end timestamps
-    def get_data_from_to(self, t_begin_us: int, t_us_end: int):
+    def get_data_from_to(self, t_begin_us: int, t_us_end: int, update_freq: int):
         """ This returns all the data from ts_begin to ts_end """
         assert isinstance(t_begin_us, int)
         assert isinstance(t_us_end, int)
+        update_freq = int(update_freq)
         
-        # begin_idx = np.where(self.net_t_us == t_begin_us)[0][0]
-        # end_idx = np.where(self.net_t_us == t_us_end)[0][0]
-        abs_diff = np.abs(self.net_t_us - t_begin_us)
-        begin_idx = np.argmin(abs_diff)
-        end_idx = begin_idx + 199
+        begin_idx = np.where(self.net_t_us == t_begin_us)[0][0]
+        end_idx = np.where(self.net_t_us == t_us_end)[0][0]
+        if update_freq == 1000:
+            indices = np.arange(begin_idx + 5, end_idx + 10, 5)
+        else:
+            indices = np.arange(begin_idx, end_idx + 1, 1)
+            
+        #     print(begin_idx, end_idx)  #0 995 / 1 200
+        #     begin_idx = int((begin_idx+5)/5)
+        #     end_idx = int((end_idx+5)/5)
+        
+        # abs_diff = np.abs(self.net_t_us - t_begin_us)
+        # begin_idx = np.argmin(abs_diff)
+        # end_idx = begin_idx + 199
+        # abs_diff_end = np.abs(self.net_t_us - t_us_end)
+        # end_idx = np.argmin(abs_diff_end)
+        # begin_idx = end_idx - 199
         # print(t_begin_us * 1e-6, begin_idx, self.net_t_us.shape[0])
         # assert False
         
-        net_acc = self.net_acc[begin_idx : end_idx + 1, :]
-        net_gyr = self.net_gyr[begin_idx : end_idx + 1, :]
-        net_t_us = self.net_t_us[begin_idx : end_idx + 1]
+        # print("inside buffer : ", self.net_acc.shape, self.net_gyr.shape, self.net_t_us.shape)
+        # net_acc = self.net_acc[begin_idx : end_idx + 1, :]
+        # net_gyr = self.net_gyr[begin_idx : end_idx + 1, :]
+        # net_t_us = self.net_t_us[begin_idx : end_idx + 1]
+        net_acc = self.net_acc[indices]
+        net_gyr = self.net_gyr[indices]
+        net_t_us = self.net_t_us[indices]
+        
+        # print(t_begin_us, net_t_us[:3])
+        
         return net_acc, net_gyr, net_t_us
 
     def throw_data_before(self, t_begin_us: int):

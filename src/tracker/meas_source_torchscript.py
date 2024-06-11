@@ -26,6 +26,7 @@ class MeasSourceTorchScript:
         self.net.to(self.device)
         self.net.eval()
         logging.info("Model {} loaded to device {}.".format(model_path, self.device))
+        self.model_path = model_path
 
     def get_displacement_measurement(self, net_gyr_w, net_acc_w, net_vel_body = None, net_ori_b2w = None, input_3 = False, input_4 = False, clip_small_disp=False):
         with torch.no_grad():
@@ -44,7 +45,8 @@ class MeasSourceTorchScript:
             outputs = self.net(*netargs)
 
             if type(outputs) == tuple:  # Legacy
-                if input_3: 
+                # if input_3: 
+                if "eq" in self.model_path : 
                     a, meas_cov, meas = outputs
                 else:
                     meas, meas_cov = outputs

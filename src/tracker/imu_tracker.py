@@ -15,6 +15,7 @@ from utils.from_scipy import compute_euler_from_matrix
 from utils.logging import logging
 from utils.math_utils import mat_exp
 from scipy.spatial.transform import Rotation
+import re
 
 class ImuTracker:
     """
@@ -75,8 +76,8 @@ class ImuTracker:
         # we do update between clone separated by 19=update_distance_num_clone-1 other clone
         # if using 400 samples with 200 past data and clone_every_n_netimu_sample 10, inference at 20 hz
         # we do update between clone separated by 19=update_distance_num_clone-1 other clone
-        if not (config_from_network.imu_freq_net / update_freq).is_integer():
-            raise ValueError("update_freq must be divisible by imu_freq_net.")
+        # if not (config_from_network.imu_freq_net / update_freq).is_integer():
+        #     raise ValueError("update_freq must be divisible by imu_freq_net.")
         if not (config_from_network.window_time * update_freq).is_integer():
             raise ValueError(
                 "window_time cannot be represented by integer number of updates."
@@ -85,9 +86,9 @@ class ImuTracker:
         self.clone_every_n_netimu_sample = int(
             config_from_network.imu_freq_net / update_freq
         )  # network inference/filter update interval
-        assert (
-            config_from_network.imu_freq_net % update_freq == 0
-        )  # imu frequency must be a multiple of update frequency
+        # assert (
+        #     config_from_network.imu_freq_net % update_freq == 0
+        # )  # imu frequency must be a multiple of update frequency
         self.update_distance_num_clone = int(
             config_from_network.window_time * update_freq
         )
@@ -155,16 +156,17 @@ class ImuTracker:
         net_tus_end = t_end_us - self.dt_interp_us
 
         net_acc, net_gyr, net_tus = self.imu_buffer.get_data_from_to(
-            net_tus_begin, net_tus_end
+            net_tus_begin, net_tus_end, self.update_freq
         )
 
-        # print(net_gyr.shape[0] , self.net_input_size)
+        # print(net_gyr.shape, self.net_input_size, net_tus.shape)
         assert net_gyr.shape[0] == self.net_input_size
         assert net_acc.shape[0] == self.net_input_size
         
         net_gyr_w = net_gyr
         net_acc_w = net_acc
-        
+        # print(net_tus_begin, net_tus[:3]) #og TLIO에서 net_tus_end - net_tus[-1] = 1000 딱 떨어짐, 그리고 5000씩 딱딱 맞춰 증가, 200hz 이아헹선 아예 같음
+        # print("is running here?2")
         if not self.body_frame:
             
             # get data from filter
@@ -203,6 +205,7 @@ class ImuTracker:
             Rs_net_wfb = np.einsum("ip,tpj->tij", R_bofboldstate, Rs_bofbi)
             net_acc_w = np.einsum("tij,tj->ti", Rs_net_wfb, net_acc)  # N x 3
             net_gyr_w = np.einsum("tij,tj->ti", Rs_net_wfb, net_gyr)  # N x 3
+        # print("is running here?3")
 
         return net_gyr_w, net_acc_w
 
@@ -251,6 +254,9 @@ class ImuTracker:
         ) = self._compensate_measurement_with_initial_calibration(gyr_raw, acc_raw)
         self.filter.initialize_with_state(t_us, R, v, p, init_ba, init_bg, self.use_riekf)
         self._after_filter_init_member_setup(t_us, gyr_biascpst, acc_biascpst)
+        # print(gyr_biascpst - gyr_raw)
+        # print(acc_biascpst - acc_raw)
+        # assert False
         return False
 
     def _init_without_state_at_time(self, t_us, gyr_raw, acc_raw):
@@ -265,18 +271,18 @@ class ImuTracker:
         self.filter.initialize(t_us, acc_biascpst, init_ba, init_bg, self.use_riekf)
         self._after_filter_init_member_setup(t_us, gyr_biascpst, acc_biascpst)
 
-    def on_imu_measurement(self, t_us, gyr_raw, acc_raw):
+    def on_imu_measurement(self, t_us, gyr_raw, acc_raw, i):
         assert isinstance(t_us, int)
         if t_us - self.last_t_us > 3e3:
             logging.warning(f"Big IMU gap : {t_us - self.last_t_us}us")
 
         if self.filter.initialized:
-            return self._on_imu_measurement_after_init(t_us, gyr_raw, acc_raw)
+            return self._on_imu_measurement_after_init(t_us, gyr_raw, acc_raw, i)
         else:
             self._init_without_state_at_time(t_us, gyr_raw, acc_raw)
             return False
 
-    def _on_imu_measurement_after_init(self, t_us, gyr_raw, acc_raw):
+    def _on_imu_measurement_after_init(self, t_us, gyr_raw, acc_raw, i):
         """
         For new IMU measurement, after the filter has been initialized
         """
@@ -304,10 +310,12 @@ class ImuTracker:
             gyr_biascpst = gyr_raw
 
         # decide if we need to interpolate imu data or do update
+        # print(t_us, self.next_interp_t_us, self.dt_update_us)
         do_interpolation_of_imu = t_us >= self.next_interp_t_us
-        
+        # assert False
         # if not self.use_riekf : 
         do_augmentation_and_update = t_us >= self.next_aug_t_us
+        # print(t_us, self.next_interp_t_us, self.next_aug_t_us)
 
         # # if augmenting the state, check that we compute interpolated measurement also
         # assert (
@@ -328,20 +336,37 @@ class ImuTracker:
             self.filter.propagate(
                 acc_raw, gyr_raw, t_us, t_augmentation_us=t_augmentation_us
             )
+            # print("propagate running!")
+            
         else:
+            if "sim" not in self.vio_path:
+                rotation_info = np.load("./../so3_local_data_bodyframe2/rpy_values.npy")
+                rotation_rpy = rotation_info[i,:]
+                m_b2bprime = Rotation.from_euler('xyz', rotation_rpy, degrees=False).as_matrix()
+            else:
+                m_b2bprime = np.eye(3)
+            
+            # assert t_augmentation_us is not None
             self.filter.propagate_riekf(
-                acc_raw, gyr_raw, t_us
+                # acc_raw, gyr_raw, t_us, m_b2bprime
+                acc_raw, gyr_raw, t_augmentation_us, m_b2bprime
             )
+            # print("propagation working!")
+            
         # filter update
         did_update = False
         if not self.use_riekf :
             if do_augmentation_and_update:
                 did_update = self._process_update(t_us)
+                # print("update running!")
+                # print(t_us, self.next_aug_t_us)
                 # plan next update/augmentation of state
                 self.next_aug_t_us += self.dt_update_us
         else:
             if do_augmentation_and_update:
                 did_update = self._process_update_riekf(t_us)   
+                # print("update working!")
+                # print(t_us, self.next_aug_t_us)
                 self.next_aug_t_us += self.dt_update_us
 
         # set last value memory to the current one
@@ -360,8 +385,10 @@ class ImuTracker:
         # if self.filter.state.N <= self.update_distance_num_clone:
         #     return False
         
-        t_begin_us = t_us - 1000000
-        t_end_us = t_us
+        # t_end_us = t_us
+        t_end_us = self.filter.state.si_timestamps_us[-1]  # always the last state
+        t_begin_us = t_end_us - 1000000
+        
         # t_begin_us = t_us + 99000
         # t_end_us = t_us + 1000000 + 99000
         t_oldest_state_us = t_begin_us
@@ -396,67 +423,154 @@ class ImuTracker:
                 t_begin_us, t_oldest_state_us, t_end_us
             )
             
-            if self.input_3:
-                # input_4 = True
-                input_4 = False
+            vio_data = np.load(self.vio_path)
+            # if self.input_3:
+            #     # input_4 = True
+            #     input_4 = False
                 
-                num_data = net_gyr_w.shape[0]
-                net_vel_body = np.empty((0, 3))
+            #     num_data = net_gyr_w.shape[0]
+            #     net_vel_body = np.empty((0, 3))
                 
-                net_ori_b2w = np.empty((0, 9))
+            #     net_ori_b2w = np.empty((0, 9))
                 
-                vio_data = np.load(self.vio_path)
-                ts_data = np.array(self.filter.state.si_timestamps_us)
-                v_data = np.squeeze(np.array(self.filter.state.si_vs))
-                R_data = np.array(self.filter.state.si_Rs)
-                # print(R_data[-1], self.filter.state.s_R)
-                # assert False
+            #     vio_data = np.load(self.vio_path)
+            #     ts_data = np.array(self.filter.state.si_timestamps_us)
+            #     v_data = np.squeeze(np.array(self.filter.state.si_vs))
+            #     R_data = np.array(self.filter.state.si_Rs)
+            #     # print(R_data[-1], self.filter.state.s_R)
+            #     # assert False
                 
-                for i in range(num_data): 
-                    timestamp = t_begin_us + 5000*i
-                    if ts_data.size < 2 or v_data.shape[0] < 1000:
-                        index = round(vio_data[:, 0].shape[0] * ((timestamp - t_start_us1) / (t_end_us1 - t_start_us1)))
-                        if index >= len(vio_data):
-                            v_past2 = vio_data[-1,-3:]  # using imu0_resampled.npy
-                            if input_4:
-                                R_past = vio_data[-1,-10:-6]
-                                R_past_matrix = Rotation.from_quat(R_past).as_matrix()
-                                ori_column1 = R_past_matrix[:,0].reshape(3)
-                                ori_column2 = R_past_matrix[:,1].reshape(3)
-                                ori_column3 = R_past_matrix[:,2].reshape(3)
-                                stack_ori = np.hstack((ori_column1, ori_column2, ori_column3))
-
-                        else:
-                            v_past2 = vio_data[index,-3:]  # using imu0_resampled.npy
-                            if input_4:
-                                R_past = vio_data[index,-10:-6]
-                                R_past_matrix = Rotation.from_quat(R_past).as_matrix()
-                                ori_column1 = R_past_matrix[:,0].reshape(3)
-                                ori_column2 = R_past_matrix[:,1].reshape(3)
-                                ori_column3 = R_past_matrix[:,2].reshape(3)
-                                stack_ori = np.hstack((ori_column1, ori_column2, ori_column3))
-                        v_at_timestamp_bd = v_past2
-                    else:
-                        # print("i :  ", i)
-                        v_at_timestamp = v_data[5*(-200+i), :]
-                        v_at_timestamp_bd = v_at_timestamp
+            #     for i in range(num_data): 
+            #         timestamp = t_begin_us + 5000*i
+            #         if ts_data.size < 3 or v_data.shape[0] < 200:
+            #             print("using gt", ts_data.size, v_data.shape[0])
+            #             index = round(vio_data[:, 0].shape[0] * ((timestamp - t_start_us1) / (t_end_us1 - t_start_us1)))
                         
-                        R_at_timestamp = R_data[5*(-200+i), :, :]
-                        ori_column1 = R_at_timestamp[:,0].reshape(3)
-                        ori_column2 = R_at_timestamp[:,1].reshape(3)
-                        ori_column3 = R_at_timestamp[:,2].reshape(3)
-                        stack_ori = np.hstack((ori_column1, ori_column2, ori_column3))
-
-                    net_vel_body = np.vstack((net_vel_body, v_at_timestamp_bd.reshape(3)))
-                    if input_4:
-                        net_ori_b2w = np.vstack((net_ori_b2w, stack_ori.reshape(9)))
+            #             time = vio_data[:, 0]
+            #             velocity = vio_data[:, -3:]
+            #             interp_funcs = [interp1d(time, velocity[:, i], fill_value="extrapolate") for i in range(velocity.shape[1])]
+            #             v_past2 = np.array([interp_func(timestamp) for interp_func in interp_funcs]).reshape(3,-1)
                         
-            else:
-                net_vel_body = None                        
+            #             # if index >= len(vio_data):
+            #             #     v_past2 = vio_data[-1,-3:]  # using imu0_resampled.npy
+            #             #     if input_4:
+            #             #         R_past = vio_data[-1,-10:-6]
+            #             #         R_past_matrix = Rotation.from_quat(R_past).as_matrix()
+            #             #         ori_column1 = R_past_matrix[:,0].reshape(3)
+            #             #         ori_column2 = R_past_matrix[:,1].reshape(3)
+            #             #         ori_column3 = R_past_matrix[:,2].reshape(3)
+            #             #         stack_ori = np.hstack((ori_column1, ori_column2, ori_column3))
+
+            #             # else:
+            #             #     v_past2 = vio_data[index,-3:]  # using imu0_resampled.npy
+            #             #     if input_4:
+            #             #         R_past = vio_data[index,-10:-6]
+            #             #         R_past_matrix = Rotation.from_quat(R_past).as_matrix()
+            #             #         ori_column1 = R_past_matrix[:,0].reshape(3)
+            #             #         ori_column2 = R_past_matrix[:,1].reshape(3)
+            #             #         ori_column3 = R_past_matrix[:,2].reshape(3)
+            #             #         stack_ori = np.hstack((ori_column1, ori_column2, ori_column3))
+            #             v_at_timestamp_bd = v_past2
+            #         else:
+            #             # print("i :  ", i)
+            #             v_at_timestamp = v_data[5*(-200+i), :]
+            #             v_at_timestamp_bd = v_at_timestamp
+                        
+            #             index = round(vio_data[:, 0].shape[0] * ((timestamp - t_start_us1) / (t_end_us1 - t_start_us1)))
+            #             if index >= len(vio_data):
+            #                 v_past2 = vio_data[-1,-3:]  # using imu0_resampled.npy
+            #             else:
+            #                 v_past2 = vio_data[index,-3:]
+            #             v_at_timestamp_bd_gt = v_past2
+            #             # v_at_timestamp_bd= v_at_timestamp_bd_gt
+            #             # print("v_at_timestamp_bd_gt : ", v_at_timestamp_bd_gt)
+            #             # print("v_at_timestamp_bd : ", v_at_timestamp_bd)
+                        
+            #             if input_4:
+            #                 R_at_timestamp = R_data[5*(-200+i), :, :]
+            #                 ori_column1 = R_at_timestamp[:,0].reshape(3)
+            #                 ori_column2 = R_at_timestamp[:,1].reshape(3)
+            #                 ori_column3 = R_at_timestamp[:,2].reshape(3)
+            #                 stack_ori = np.hstack((ori_column1, ori_column2, ori_column3))
+
+            #         net_vel_body = np.vstack((net_vel_body, v_at_timestamp_bd.reshape(3)))
+            #         if input_4:
+            #             net_ori_b2w = np.vstack((net_ori_b2w, stack_ori.reshape(9)))
+                        
+            # else:
+            #     net_vel_body = None                        
                
-            meas, meas_cov = self.meas_source.get_displacement_measurement(
-                net_gyr_w, net_acc_w, net_vel_body, net_ori_b2w, self.input_3, input_4
-            )
+            # meas, meas_cov = self.meas_source.get_displacement_measurement(
+            #     net_gyr_w, net_acc_w, net_vel_body, net_ori_b2w, self.input_3, input_4
+            # )
+            
+            # #2. using R - gt
+            # # print(t_end_us, t_start_us1 , t_end_us1)
+            # # index = round(vio_data[:, 0].shape[0] * ((t_end_us - t_start_us1) / (t_end_us1 - t_start_us1)))
+            # # # print((t_end_us - t_start_us1) / (t_end_us1 - t_start_us1)*100)
+            # # if index >= len(vio_data):
+            # #     meas = vio_data[-1,-3:].reshape(3,-1)
+            # #     meas_cov = meas
+            # # else:
+            # #     meas = vio_data[index,-3:].reshape(3,-1)
+            # #     meas_cov = meas
+            
+            # time = vio_data[:, 0]
+            # velocity = vio_data[:, -3:]
+            # interp_funcs = [interp1d(time, velocity[:, i], fill_value="extrapolate") for i in range(velocity.shape[1])]
+            # meas_gt = np.array([interp_func(t_end_us) for interp_func in interp_funcs]).reshape(3,-1)
+            # meas_cov = meas_gt
+            # print(meas.reshape(-1)-net_vel_body[-1].reshape(-1))
+            
+            ts_data = np.array(self.filter.state.si_timestamps_us)
+            v_data = np.squeeze(np.array(self.filter.state.si_vs))
+            
+            # print(ts_data.size , v_data.shape)
+            # print(ts_data[5*(-199)], ts_data[-1], t_end_us)
+            
+            time = vio_data[:, 0]
+            velocity = vio_data[:, -3:]
+            interp_funcs = [interp1d(time, velocity[:, i], fill_value="extrapolate") for i in range(velocity.shape[1])]
+            meas_gt = np.array([interp_func(t_end_us) for interp_func in interp_funcs]).reshape(3,-1)
+            
+            meas = meas_gt
+            meas_cov = meas_gt
+            if ts_data.size < 3 or v_data.shape[0] < 1000:
+                # print(ts_data.size, v_data.shape[0])
+                # print("using gt")
+                meas = np.array([interp_func(t_end_us) for interp_func in interp_funcs]).reshape(3,-1)
+                meas_cov = meas
+            else:
+                net_vel_body = np.empty((0, 3))
+                num_data = net_gyr_w.shape[0]
+                # print(ts_data[5*(-199)], ts_data[-1], t_end_us)
+                # for i in range(num_data): 
+                #     timestamp = t_begin_us + 5000*i
+                #     print(ts_data[5*(-199+i)-1], t_end_us)
+                #     v_at_timestamp = v_data[5*(-199+i)-1, :]
+                #     v_at_timestamp_bd = v_at_timestamp
+                #     net_vel_body = np.vstack((net_vel_body, v_at_timestamp_bd.reshape(3)))
+                step = 5
+                indices = np.arange(-199, 1) * step + (v_data.shape[0] - 1)
+                # print(indices)
+                timestamps = t_begin_us + np.arange(num_data) * 5000
+                assert np.all(ts_data[indices] <= t_end_us), "Timestamp data out of range"
+                net_vel_body = v_data[indices, :]
+                
+                # print(net_vel_body.shape)
+                # t_data = ts_data[indices]
+                # print(t_data[-1], t_end_us)
+                
+                net_ori_b2w = None
+                input_4 = False
+                meas, meas_cov = self.meas_source.get_displacement_measurement(
+                    net_gyr_w, net_acc_w, net_vel_body, net_ori_b2w, self.input_3, input_4
+                )
+                # print(meas.reshape(-1)-meas_gt.reshape(-1))
+            # print(t_end_us, ts_data)
+            # print(meas.reshape(-1)-meas_gt.reshape(-1), meas_gt.reshape(-1))
+            
+            # print(interpolated_velocity.reshape(3,-1) - meas)
             
         #for equiv-cov
         # meas_cov = R_data[-1] @ meas_cov @ R_data[-1].T
@@ -484,6 +598,7 @@ class ImuTracker:
     def _process_update(self, t_us):
         logging.debug(f"Upd. @ {t_us * 1e-6} | Ns: {self.filter.state.N} ")
         # get update interval t_begin_us and t_end_us
+        # print("code running?", self.filter.state.N, self.update_distance_num_clone)
         if self.filter.state.N <= self.update_distance_num_clone:
             return False
         t_oldest_state_us = self.filter.state.si_timestamps_us[
@@ -501,6 +616,7 @@ class ImuTracker:
         # assert False
         
         # If we do not have enough IMU data yet, just wait for next time
+        
         if t_begin_us < self.imu_buffer.net_t_us[0]:
             return False
         # initialize with vio at the first update
@@ -537,4 +653,7 @@ class ImuTracker:
             acc_biascpst,
             self.next_interp_t_us,
         )
-        self.next_interp_t_us += self.dt_interp_us
+        
+        # self.next_interp_t_us += self.dt_interp_us
+        # self.next_interp_t_us += int(self.dt_interp_us / 5)
+        self.next_interp_t_us += self.dt_update_us

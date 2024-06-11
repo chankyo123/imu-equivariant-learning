@@ -225,7 +225,11 @@ def run(args, dataset):
     bg = states[:, 18:21]
     accs = states[:, 21:24]  # offline calib compensated, scale+bias
     gyrs = states[:, 24:27]  # offline calib compensated, scale+bias
-    ts = states[:, 27]
+    if "/sim_imu_longerseq" in args.root_dir:
+        ts = states[:, 27] * 1e-6
+    else:
+        ts = states[:, 27]
+    # ts = states[:, 27]
     sigma_r = np.sqrt(states[:, 28:31]) * 180.0 / np.pi
     sigma_v = np.sqrt(states[:, 31:34])
     sigma_p = np.sqrt(states[:, 34:37])
@@ -256,15 +260,17 @@ def run(args, dataset):
             logging.info(
                 f"Reading ronin data from {osp.join(args.ronin_dir, dataset,  'trajectory.txt')}"
             )
-
         ronin_ts = ronin[:, 0]
         ronin_p = ronin[:, 1:4]
+        # print(ts[0], ts[-1])
+        # print(ronin_ts[0], ronin_ts[-1])
+        # assert False
         # fig100 = plt.figure(num="prediction vs gt")
         # pos_pred = ronin_p
         # plt.plot(pos_pred[:, 0], pos_pred[:, 1], color='red')
         # plt.legend(["IMU Equivariant Learning"])
         # fig100.savefig(osp.join('/workspace/TLIO/src', "test_roninp.png"))
-        # assert False
+        
         if ronin_ts[0] > ts[0]:
             ronin_ts = np.insert(ronin_ts, 0, ts[0])
             ronin_p = np.concatenate([ronin_p[0].reshape(1, 3), ronin_p], axis=0)
@@ -334,6 +340,8 @@ def run(args, dataset):
             )
 
             vio_uw_euls = unwrap_rpy(vio_euls)
+            # print(vio_ts[:10], ts[0])    #diff : 0.005
+            # assert False
             if vio_ts[0] > ts[0]:
                 vio_ts = np.insert(vio_ts, 0, ts[0])
                 vio_uw_euls = np.concatenate(
@@ -407,6 +415,11 @@ def run(args, dataset):
                     "Not saving vio_states.npy because traj is still processing"
                 )
 
+    # print(ts[:10])  #diff : 0.001
+    # print(ronin_ts[:10])    #diff : 0.05
+    # print(vio_ts[:10])    #diff : 0.005
+    # assert False
+    
     # get simulation states
     if args.plot_sim:
         sim_data = np.loadtxt(
@@ -502,6 +515,7 @@ def run(args, dataset):
     N = ts.shape[0]
     start_idx = 2000  # 2 s
     end_idx = N - 1
+    # end_idx = int((N - 1)/2)
     start_ts = ts[start_idx]
     end_ts = ts[end_idx]
 
@@ -718,6 +732,10 @@ def run(args, dataset):
     plt.plot(ref_p[idxs, 0], ref_p[idxs, 1], label=ref_type, color=color_vio)
     if args.ronin_dir is not None:
         plt.plot(ronin_p[idxs, 0], ronin_p[idxs, 1], label="ronin", color=color_ronin)
+    # print(ps[100:110,:])
+    # print(ref_p[100:110,:])
+    # print(ronin_p[100:110,:])
+    # assert False
     plt.legend(loc="upper center")
     plt.xlabel("x")
     plt.ylabel("y")

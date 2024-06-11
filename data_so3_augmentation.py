@@ -109,18 +109,22 @@ def copy_files_from_other_list(source_directory, all_list_path, destination_dire
 
 
 # Directory containing data
-# data_directory = "./local_data_bodyframe/tlio_golden"
-# save_directory = "./local_data_bodyframe_test_so2/tlio_golden"
-# save_directory = "./local_data_bodyframe_test_so2_2/tlio_golden"
-# save_directory = "./local_data_bodyframe_test_so2_fixed_notcsv/tlio_golden"
+data_directory = "./local_data_bodyframe/tlio_golden"
+save_directory = "./so3_local_data_bodyframe60/"     #--> worldframe도 변한거야
+# save_directory = "./so2_local_data_bodyframe/"     #--> worldframe도 변한거야
+# save_directory = "./so2_local_data_bodyframe_quat/"     #--> worldframe은 변하지 않고 바디가 b1 -> b2 로만 바뀐것
 
-# data_directory = "./local_data_bodyframe_test_so2/tlio_golden"
-# save_directory = "./local_data_bodyframe_test_so2_csv_pos_quat/tlio_golden"
+# data_directory = "./local_data/tlio_golden"
+# save_directory = "./local_data_test_so2_fixed/tlio_golden"
+
 # data_directory = "./sim_imu_longerseq_worldframe"
 # save_directory = "./sim_imu_longerseq_worldframe_idso3"
 
-data_directory = "./sim_imu_longerseq"
-save_directory = "./sim_imu_longerseq_idso3"
+# data_directory = "./sim_imu_longerseq"
+# save_directory = "./sim_imu_longerseq_idso3"
+
+# data_directory = "./june_sim_imu_longerseq"
+# save_directory = "./june_sim_imu_longerseq_idso2"
 
 # train_list_path = os.path.join(data_directory, "train_list.txt") 
 train_list_path = os.path.join(data_directory, "test_list.txt") 
@@ -135,7 +139,10 @@ with open(train_list_path, "r") as file:
 # with open(test_list_path, "r") as file:
 #     subdirectories2 = [line.strip() for line in file]
 subdirectories = subdirectories1 + subdirectories2    
+
+rpy_values = []
 # for idx, subdirectory in subdirectories:
+
 for idx, subdirectory in enumerate(subdirectories):
     subdirectory_path = os.path.join(data_directory, subdirectory)
 
@@ -143,40 +150,62 @@ for idx, subdirectory in enumerate(subdirectories):
     if os.path.exists(npy_file_path):
         original_data = np.load(npy_file_path)
 
-        # Define 3D rotation matrix (modify as needed)
-        # rotation_matrix = Rotation.from_euler('xyz', [15, 30, 45], degrees=True).as_matrix()
-        random_theta = np.random.uniform(0, 2 * np.pi, len(subdirectories))
-        random_roll = np.random.uniform(0, 2 * np.pi, len(subdirectories))
-        random_pitch = np.random.uniform(0, 2 * np.pi, len(subdirectories))
+        # random within [0, 2*pi]
+        # random_roll = np.random.uniform(0, 2 * np.pi)
+        # random_pitch = np.random.uniform(0, 2 * np.pi)
+
+        # roll, pitch : random within [-30 degree, 30 degree]
+        rad_range = 60 * (np.pi / 180)
+        random_roll = np.random.uniform(-rad_range, rad_range)
+        random_pitch = np.random.uniform(-rad_range, rad_range)
+        random_theta = np.random.uniform(0, 2 * np.pi)
         
         # #so2 rotation : roll == pitch == 0
         # random_roll[idx] = 0
         # random_pitch[idx] = 0
-        # random_roll[idx] = np.pi/2
-        # random_pitch[idx] = 0
-        # random_theta[idx] = 0
+        # # random_roll[idx] = np.pi/2
+        # # random_pitch[idx] = 0
+        # # random_theta[idx] = 0
         
+        rpy_values.append([random_roll, random_pitch, random_theta])
         # rotation_matrix = rand_rotation_matrix(random_theta[idx])
         # neg_rotation_matrix = rand_rotation_matrix(-1*random_theta[idx])
 
-        rotation_matrix = rand_rotation_matrix(random_theta[idx], random_roll[idx], random_pitch[idx])
-        neg_rotation_matrix = rand_rotation_matrix(-1*random_theta[idx], random_roll[idx], random_pitch[idx])
+        rotation_matrix = rand_rotation_matrix(random_theta, random_roll, random_pitch)
+        neg_rotation_matrix = rand_rotation_matrix(-random_theta, random_roll, random_pitch)
         
         # Apply rotation to gyroscope, acceleration, quaternion, position, and velocity data
-        rotated_gyroscope = apply_rotation(original_data[:, 1:4], rotation_matrix)
-        rotated_acceleration = apply_rotation(original_data[:, 4:7], rotation_matrix)
+        rotated_gyroscope = apply_rotation(original_data[:, 1:4], rotation_matrix.T)
+        rotated_acceleration = apply_rotation(original_data[:, 4:7], rotation_matrix.T)
         quaternion = original_data[:, 7:11]
         r = Rotation.from_quat(quaternion)
         r_vec = r.as_rotvec()
+        r_m = r.as_matrix()
         
-        rotated_position = apply_rotation(original_data[:, 11:14], rotation_matrix)
-        rotated_velocity = apply_rotation(original_data[:, 14:17], rotation_matrix)
-        rotated_r_vec = apply_rotation(r_vec, rotation_matrix)
-        rotated_quaternion = Rotation.from_rotvec(rotated_r_vec)
-        rotated_quaternion = rotated_quaternion.as_quat()
+        #1. -->world frame 은 안바뀐거
+        rotated_ori = np.einsum('nij,jk->nik', r_m, rotation_matrix.T)
+        rotated_quaternion = Rotation.from_matrix(rotated_ori).as_quat()
+        #1. -->world frame 은 안바뀐거
+        
+        #2. -->world frame 도 바뀐거
+        rotated_ori1 = np.einsum('nij,jk->nik', r_m, rotation_matrix.T)
+        rotated_ori2 = np.einsum('ki,nij->nkj', rotation_matrix, rotated_ori1)
+        rotated_quaternion2 = Rotation.from_matrix(rotated_ori2).as_quat()
+        #2. -->world frame 도 바뀐거
+        
+        rotated_position = apply_rotation(original_data[:, 11:14], rotation_matrix.T)
+        rotated_velocity = apply_rotation(original_data[:, 14:17], rotation_matrix.T)
+        # rotated_r_vec = apply_rotation(r_vec, rotation_matrix.T)
+        # rotated_quaternion = Rotation.from_rotvec(rotated_r_vec)
+        # rotated_quaternion = rotated_quaternion.as_quat()
         # Concatenate the time column and rotated data
+        
         rotated_data = np.concatenate([original_data[:, :1], rotated_gyroscope, rotated_acceleration,
-                                    rotated_quaternion, rotated_position, rotated_velocity], axis=1)
+                                    # rotated_quaternion, 
+                                    # original_data[:, 11:14], #-->world frame 은 안바뀐거
+                                    rotated_quaternion2,
+                                    rotated_position, #-->world frame 도 바뀐거
+                                    rotated_velocity], axis=1)
         
         # Save the rotated data in the same format
         path = os.path.join(save_directory, subdirectory)
@@ -187,27 +216,25 @@ for idx, subdirectory in enumerate(subdirectories):
     csv_file_path = os.path.join(subdirectory_path, "imu_samples_calibrated.csv")
     if os.path.exists(csv_file_path):
         df = pd.read_csv(csv_file_path)
-        if df.shape[1] >= 7:  # Ensure the CSV file has enough columns
-            gyro_data = df.iloc[:, 2:5].values
-            acc_data = df.iloc[:, 5:8].values
-            
-            # Apply rotation to gyroscope and acceleration data
-            rotated_gyro_data = apply_rotation(gyro_data, rotation_matrix)
-            rotated_acc_data = apply_rotation(acc_data, rotation_matrix)
-            
-            rotated_gyro_data = np.around(rotated_gyro_data, decimals=7)
-            rotated_acc_data = np.around(rotated_acc_data, decimals=7)
-            
-            # Replace the original data with the rotated data
-            # df.iloc[:, 0:2] = df.iloc[:, 0:2].values
-            df.iloc[:, 2:5] = rotated_gyro_data
-            df.iloc[:, 5:8] = rotated_acc_data
-            
-            # Save the rotated CSV data
-            rotated_csv_path = os.path.join(save_directory, subdirectory, "imu_samples_calibrated.csv")
+        gyro_data = df.iloc[:, 2:5].values
+        acc_data = df.iloc[:, 5:8].values
+        
+        # Apply rotation to gyroscope and acceleration data
+        rotated_gyro_data = apply_rotation(gyro_data, rotation_matrix.T)
+        rotated_acc_data = apply_rotation(acc_data, rotation_matrix.T)
+        
+        # Replace the original data with the rotated data
+        df.iloc[:, 2:5] = rotated_gyro_data
+        df.iloc[:, 5:8] = rotated_acc_data
+        
+        # Save the rotated CSV data
+        rotated_csv_path = os.path.join(save_directory, subdirectory, "imu_samples_calibrated.csv")
 
-            df.to_csv(rotated_csv_path, index=False)
-    print(path)
+        df.to_csv(rotated_csv_path, index=False)
+    print(os.path.join(path, "imu0_resampled.npy"))
+
+np.save(os.path.join(save_directory, "rpy_values.npy"), rpy_values)
+print(os.path.join(save_directory, "rpy_values.npy"))
     
     
 for subdir in os.listdir(data_directory):

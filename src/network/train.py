@@ -45,12 +45,14 @@ def get_inference(network, data_loader, device, epoch, body_frame_3regress = Fal
             # print(feat.shape, pred.shape, pred_cov.shape)
         else:
             pred, pred_cov = network(feat)
-            pred_vel = torch.tensor([1]).to('cuda')
+            pred_vel = pred
         
         if len(pred.shape) == 2:
             targ = sample["targ_dt_World"][:,-1,:]
             if body_frame: 
+                # print("body frame is running in inference!!")
                 targ_vel = sample["vel_Body"][:,-1,:]
+                targ = targ_vel
             else:
                 targ_vel = sample["vel_World"][:,-1,:]
         else:
@@ -61,10 +63,11 @@ def get_inference(network, data_loader, device, epoch, body_frame_3regress = Fal
             loss = get_loss(pred_vel, pred_cov, targ_vel, epoch, body_frame_3regress)
         else:
             #1. use dt as target
-            # loss = get_loss(pred, pred_cov, targ, epoch, False)
+            # print("second loss is running in inference!")
+            loss = get_loss(pred, pred_cov, targ, epoch, False)
             
             #2. use v as target
-            loss = get_loss(pred, pred_cov, targ_vel, epoch, False)
+            # loss = get_loss(pred, pred_cov, targ_vel, epoch, False)
 
         targets_all.append(torch_to_numpy(targ))
         preds_all.append(torch_to_numpy(pred))
@@ -162,7 +165,7 @@ def do_train(network, train_loader, device, epoch, optimizer, input_dim, transfo
             pred, pred_cov, pred_vel = network(feat)
         else:
             pred, pred_cov= network(feat)
-            pred_vel = torch.tensor([1]).to('cuda')
+            pred_vel = pred
 
         # if body_frame_3regress: 
         #     pred_rot, pred_cov_rot, pred_vel_rot = network(feat_rot)
@@ -175,7 +178,9 @@ def do_train(network, train_loader, device, epoch, optimizer, input_dim, transfo
         if len(pred.shape) == 2:
             targ = sample["targ_dt_World"][:,-1,:]
             if body_frame:
+                # print("body frame is running in training!!")
                 targ_vel = sample["vel_Body"][:,-1,:]
+                targ = targ_vel
             else:
                 targ_vel = sample["vel_World"][:,-1,:]
         else:
@@ -186,10 +191,11 @@ def do_train(network, train_loader, device, epoch, optimizer, input_dim, transfo
             loss = get_loss(pred_vel, pred_cov, targ_vel, epoch, body_frame_3regress)
         else:
             #1. use dt as target
-            # loss = get_loss(pred, pred_cov, targ, epoch, False)
+            # print("second loss is running in training!")
+            loss = get_loss(pred, pred_cov, targ, epoch, False)
             
-            #2. use v as target
-            loss = get_loss(pred, pred_cov, targ_vel, epoch, False)
+            # 2. use v as target
+            # loss = get_loss(pred, pred_cov, targ_vel, epoch, False)
 
         train_targets.append(torch_to_numpy(targ))
         train_preds.append(torch_to_numpy(pred))
@@ -420,7 +426,11 @@ def net_train(args):
     # body_frame_3regress = False
     
     body_frame = eval(args.body_frame)
-    body_frame_3regress = eval(args.body_frame)
+    if "3res" in args.out_dir:
+        print("we regress 2 value!!")
+        body_frame_3regress = False
+    else:
+        body_frame_3regress = eval(args.body_frame)
     if not body_frame: 
         train_transforms = data.get_train_transforms()
     else:

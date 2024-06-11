@@ -36,7 +36,10 @@ class DataIO:
         """
         # imu_data = pd.read_csv(osp.join(args.root_dir, dataset, "imu_samples_0.csv"))
         imu_data = pd.read_csv(osp.join(args.root_dir, dataset, "imu_samples_calibrated.csv"))
-        ts_all = np.copy(imu_data.iloc[:,0]) * 1e-3
+        if "sim" in args.root_dir:
+            ts_all = np.copy(imu_data.iloc[:,0]) * 1e-3
+        else:
+            ts_all = np.copy(imu_data.iloc[:,0]) * 1e-3
         gyr_all = np.copy(imu_data.iloc[:,2:5])
         acc_all = np.copy(imu_data.iloc[:,5:8])
         if args.start_from_ts is not None:
@@ -60,6 +63,9 @@ class DataIO:
         data = np.load(osp.join(args.root_dir, dataset, "imu0_resampled.npy"))
         self.vio_ts_us = data[:, 0]
         self.vio_ts = data[:, 0] * 1e-6
+        if "/sim_imu_longerseq/" in args.root_dir:
+            self.vio_ts_us = data[:, 0] * 1e9
+            self.vio_ts = data[:, 0] * 1e3
         self.vio_rq = data[:,-10:-6]
         self.vio_p = data[:,-6:-3]
         self.vio_v = data[:,-3:]

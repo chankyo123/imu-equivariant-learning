@@ -397,7 +397,7 @@ class ImuMSCKF:
                 return False
         return True
 
-    def propagate_riekf(self, acc, gyr, t_us):
+    def propagate_riekf(self, acc, gyr, t_us, m_b2bprime):
 
         # Bias corrected IMU measurements
         R_k, v_k, p_k, b_ak, b_gk = (
@@ -426,52 +426,57 @@ class ImuMSCKF:
         P = self.Sigma15
         dimP = P.shape[0]
         dimTheta = 6  # b_ak, b_gk
-        dt_us = t_us - self.state.s_timestamp_us
-        dt = dt_us * 1e-6
-        
-        # ------------ Propagate Covariance ------------- #
-        Phi = self.StateTransitionMatrix(w,a,dt)
-        Qd = self.DiscreteNoiseMatrix(Phi,dt)
-        P_pred = Phi @ P @ Phi.T + Qd
+        if t_us:
+            dt_us = t_us - self.state.s_timestamp_us
+            dt = dt_us * 1e-6
+            
+            # ------------ Propagate Covariance ------------- #
+            Phi = self.StateTransitionMatrix(w,a,dt)
+            Qd = self.DiscreteNoiseMatrix(Phi,dt)
+            P_pred = Phi @ P @ Phi.T + Qd
 
-        # add noise from bias model
-        # P_pred[-6:, -6:] += dt * self.Q
-        # P_pred = Phi @ P @ Phi.T
-        
-        
-        # ------------ Propagate Mean ------------- #
-        phi = w * dt
-        G0 = Gamma_SO3(phi, 0)
-        G1 = Gamma_SO3(phi, 1)
-        G2 = Gamma_SO3(phi, 2)
+            # add noise from bias model
+            # P_pred[-6:, -6:] += dt * self.Q
+            # P_pred = Phi @ P @ Phi.T
+            
+            # #if no bias update
+            P_pred[:dimP - dimTheta, dimP - dimTheta:] = np.zeros((dimP - dimTheta, dimTheta))
+            P_pred[dimP - dimTheta:, :dimP - dimTheta] = np.zeros((dimTheta, dimP - dimTheta))
+            P_pred[dimP - dimTheta:, dimP - dimTheta:] = np.eye(dimTheta)
+            
+            # ------------ Propagate Mean ------------- #
+            phi = w * dt
+            G0 = Gamma_SO3(phi, 0)
+            G1 = Gamma_SO3(phi, 1)
+            G2 = Gamma_SO3(phi, 2)
 
-        X_pred = X.copy()
-        if self.state.InEKF_StateType == 'WorldCentric':
-            # Propagate world-centric state estimate
-            X_pred[0:3, 0:3] = R_k @ G0
-            X_pred[0:3, 3] = (v_k + (R_k @ G1 @ a + self.g) * dt).reshape(3)
-            X_pred[0:3, 4] = (p_k + v_k * dt + (R_k @ G2 @ a + 0.5 * self.g) * dt * dt).reshape(3)
-        else:
-            # Propagate body-centric state estimate
-            G0t = G0.T
-            X_pred[0:3, 0:3] = G0t @ R_k
-            X_pred[0:3, 3] = (G0t @ (v_k - (G1 @ a + R_k @ self.g) * dt)).reshape(3)
-            X_pred[0:3, 4] = (G0t @ (p_k + v_k * dt - (G2 @ a + 0.5 * R_k @ self.g) * dt * dt)).reshape(3)
-            for j in range(5, dimX):
-                X_pred[0:3, j] = G0t @ X[0:3, j]
+            X_pred = X.copy()
+            if self.state.InEKF_StateType == 'WorldCentric':
+                # Propagate world-centric state estimate
+                X_pred[0:3, 0:3] = R_k @ G0
+                X_pred[0:3, 3] = (v_k + (R_k @ G1 @ a + m_b2bprime @ self.g) * dt).reshape(3)
+                X_pred[0:3, 4] = (p_k + v_k * dt + (R_k @ G2 @ a + 0.5 * m_b2bprime @ self.g) * dt * dt).reshape(3)
+            else:
+                # Propagate body-centric state estimate
+                G0t = G0.T
+                X_pred[0:3, 0:3] = G0t @ R_k
+                X_pred[0:3, 3] = (G0t @ (v_k - (G1 @ a + R_k @ self.g) * dt)).reshape(3)
+                X_pred[0:3, 4] = (G0t @ (p_k + v_k * dt - (G2 @ a + 0.5 * R_k @ self.g) * dt * dt)).reshape(3)
+                for j in range(5, dimX):
+                    X_pred[0:3, j] = G0t @ X[0:3, j]
 
-        # ------------ Update State ------------- #
-        self.state.s_R = X_pred[0:3, 0:3]
-        self.state.s_v = X_pred[0:3, 3].reshape(-1, 1)
-        self.state.s_p = X_pred[0:3, 4].reshape(-1, 1)
-        self.state.s_ba = b_ak     # No change in bias in propagate step
-        self.state.s_bg = b_gk     # No change in bias in propagate step
-        self.state.s_timestamp_us = t_us
-        self.Sigma15 = P_pred
-        
-        self.state.si_Rs.append(self.state.s_R)  
-        self.state.si_vs.append(self.state.s_R.T @ self.state.s_v)  #save body velocity
-        self.state.si_timestamps_us.append(t_us)
+            # ------------ Update State ------------- #
+            self.state.s_R = X_pred[0:3, 0:3]
+            self.state.s_v = X_pred[0:3, 3].reshape(-1, 1)
+            self.state.s_p = X_pred[0:3, 4].reshape(-1, 1)
+            self.state.s_ba = b_ak     # No change in bias in propagate step
+            self.state.s_bg = b_gk     # No change in bias in propagate step
+            self.state.s_timestamp_us = t_us
+            self.Sigma15 = P_pred
+            
+            self.state.si_Rs.append(self.state.s_R)  
+            self.state.si_vs.append(self.state.s_R.T @ self.state.s_v)  #save body velocity
+            self.state.si_timestamps_us.append(t_us)
         
     
     def update_riekf(self, meas, meas_cov, t_begin_us, t_end_us):
@@ -495,11 +500,11 @@ class ImuMSCKF:
         # assert False
         dimTheta = self.state.dimTheta
 
-        # # # Remove bias
+        # # if no bias update
         # Theta = np.zeros((6,1))
-        # P[dimP-dimTheta:dimP-dimTheta+6,dimP-dimTheta:dimP-dimTheta+6] = 0.0001*np.eye(6)
-        # P[0:dimP-dimTheta,dimP-dimTheta:dimP] = np.zeros((dimP-dimTheta,dimTheta))
-        # P[dimP-dimTheta:dimP,0:dimP-dimTheta] = np.zeros((dimTheta,dimP-dimTheta))
+        P[dimP-dimTheta:dimP-dimTheta+6,dimP-dimTheta:dimP-dimTheta+6] = 0.0001*np.eye(6)
+        P[0:dimP-dimTheta,dimP-dimTheta:dimP] = np.zeros((dimP-dimTheta,dimTheta))
+        P[dimP-dimTheta:dimP,0:dimP-dimTheta] = np.zeros((dimTheta,dimP-dimTheta))
 
         # # Map from left invariant to right invariant error temporarily
         # if self.state.InEKF_ErrorType == 'LeftInvariant':
@@ -508,9 +513,9 @@ class ImuMSCKF:
         #     P = (Adj @ P @ Adj.T)
         
         
-        # N = 3*np.eye(3) #so3 3으로 해보다가 1로 바꿈
-        N = 1*np.eye(3)
-        # N = 5*np.eye(3)
+        # N = 0.1*np.eye(3) #so3 3으로 해보다가 1로 바꿈
+        # N = 1*np.eye(3) #used when using gtv
+        N = 5*np.eye(3)
         # N = 0.1*np.eye(3)
         # N = 0.01*np.eye(3)
         
@@ -532,6 +537,32 @@ class ImuMSCKF:
         H = np.zeros((3, dimP))
         H[0:3,3:6] = np.eye(3) # I
         
+        mahalanobis_factor = 0
+        if mahalanobis_factor > 0:
+            # Mahalanobis gating test
+            PHT = P @ H.T
+            S_temp = H @ PHT + N
+            Sinv_temp = np.linalg.inv(S_temp)
+            b_tmp = np.array([0, 0, 0, -1, 0]).reshape(-1,1)
+            Y_tmp = np.vstack((meas, np.array([-1, 0]).reshape(-1, 1)))
+            Z_tmp = (X @ Y_tmp - b_tmp)[0:3].reshape(-1,1)
+            
+            normalized_square_error = np.linalg.multi_dot(
+                [Z_tmp.T, Sinv_temp, Z_tmp]
+            )
+            # maha_constant = 30
+            # maha_constant = 20
+            maha_constant = 1
+            # maha_constant = 300
+            # maha_constant = 1.4
+            test_failed = normalized_square_error > mahalanobis_factor * 11.345 * maha_constant  #cov2까지는 200을 곱했었음
+            # wait for convergence before failing
+            if test_failed:
+                print("Mahalanobis test failed... xi2 =", normalized_square_error)
+                return
+            # break
+                    
+                    
         b = np.array([0, 0, 0, -1, 0]).reshape(-1,1)
         Y = np.vstack((meas, np.array([-1, 0]).reshape(-1, 1)))
         Z = X @ Y - b    # XY-b
@@ -560,13 +591,13 @@ class ImuMSCKF:
         self.state.s_R = X_new[0:3, 0:3]
         self.state.s_v = X_new[0:3, 3].reshape(-1, 1)
         self.state.s_p = X_new[0:3, 4].reshape(-1, 1)
-        # self.state.s_ba = Theta_new[3:6].reshape(-1, 1)
-        # self.state.s_bg = Theta_new[0:3].reshape(-1, 1)
+        self.state.s_ba = Theta_new[3:6].reshape(-1, 1)
+        self.state.s_bg = Theta_new[0:3].reshape(-1, 1)
         
         # self.state.si_Rs.append(self.state.s_R)  
         # self.state.si_vs.append(self.state.s_R.T @ self.state.s_v)  #save body velocity
-        # self.state.si_vs.append(self.state.s_v)     #save world velocity
-        
+        # self.state.si_timestamps_us.append(t_end_us)
+        # # self.state.si_vs.append(self.state.s_v)     #save world velocity
 
         # Update Covariance
         IKH = np.eye(dimP) - K @ H
@@ -910,11 +941,20 @@ class ImuMSCKF:
             Phi[3:6,0:3] = gx*dt
             Phi[6:9,0:3] = 0.5*gx*dt2
             Phi[6:9,3:6] = np.eye(3)*dt
-            Phi[0:3,dimP-dimTheta:dimP-dimTheta+3] = -RG1dt
-            Phi[3:6,dimP-dimTheta:dimP-dimTheta+3] = -skew(v+RG1dt@a+self.g*dt)@RG1dt + RG0@Phi25L
-            Phi[6:9,dimP-dimTheta:dimP-dimTheta+3] = -skew(p+v*dt+RG2dt2@a+0.5*self.g*dt2)@RG1dt + RG0@Phi35L
-            Phi[3:6,dimP-dimTheta+3:dimP-dimTheta+6] = -RG1dt
-            Phi[6:9,dimP-dimTheta+3:dimP-dimTheta+6] = -RG2dt2
+            
+            # #if bias update
+            # Phi[0:3,dimP-dimTheta:dimP-dimTheta+3] = -RG1dt
+            # Phi[3:6,dimP-dimTheta:dimP-dimTheta+3] = -skew(v+RG1dt@a+self.g*dt)@RG1dt + RG0@Phi25L
+            # Phi[6:9,dimP-dimTheta:dimP-dimTheta+3] = -skew(p+v*dt+RG2dt2@a+0.5*self.g*dt2)@RG1dt + RG0@Phi35L
+            
+            
+            # for i in range(5, dimX):
+            #     Phi[(i - 2) * 3:(i - 2) * 3 + 3, dimP - dimTheta:dimP] = -skew(self.state.get_vector(i)) @ RG1dt
+            # Phi[3:6,dimP-dimTheta+3:dimP-dimTheta+6] = -RG1dt
+            # Phi[6:9,dimP-dimTheta+3:dimP-dimTheta+6] = -RG2dt2
+            
+            #else
+            Phi[:, dimP - dimTheta:] = np.zeros((dimP, dimTheta))
 
         return Phi
     
@@ -945,13 +985,14 @@ class ImuMSCKF:
         Qc[0:3,0:3] = self.W[0:3,0:3]
         Qc[3:6,3:6] = self.W[3:6,3:6]
 
+        # #if bias update
         # Qc[dimP-dimTheta:dimP-dimTheta+3,dimP-dimTheta:dimP-dimTheta+3] = self.Q[0:3,0:3]
         # Qc[dimP-dimTheta+3:dimP-dimTheta+6,dimP-dimTheta+3:dimP-dimTheta+6] = self.Q[3:6,3:6]
 
         # Noise Covariance Discretization
         PhiG = Phi@G
         Qd = PhiG @ Qc @ np.transpose(PhiG) * dt    # Approximated discretized noise matrix
-        Qd[-6:,-6:] += self.Q * dt    # Approximated discretized noise matrix
+        # Qd[-6:,-6:] += self.Q * dt    # Approximated discretized noise matrix
 
         return Qd
 

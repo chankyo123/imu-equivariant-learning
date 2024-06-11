@@ -81,10 +81,11 @@ class ImuTrackerRunner:
         )
         if "sim" not in args.root_dir:
             match = re.search(r'/(\d{15,16})/', self.outfile)
-            replace_string = "./../local_data_bodyframe/tlio_golden/146734859523827/imu0_resampled.npy"
+            replace_string = "./../so3_local_data_bodyframe/146734859523827/imu0_resampled.npy"
+            
         else:
             match = re.search(r'/(\d{1,3})/', self.outfile)
-            replace_string = "./../sim_imu_longerseq/1/imu0_resampled.npy"
+            replace_string = "./../june_sim_imu_longerseq/1/imu0_resampled.npy"
             
         if match:
             extracted_string = match.group(1)
@@ -95,10 +96,13 @@ class ImuTrackerRunner:
 
         if extracted_string:
             if "sim" not in args.root_dir:
-                vio_path = re.sub(r'/\d{15,16}/', f'/{extracted_string}/', replace_string)
+                # vio_path = re.sub(r'/\d{15,16}/', f'/{extracted_string}/', replace_string)
+                vio_path = args.root_dir + extracted_string + "/imu0_resampled.npy" 
             else:
                 # vio_path = re.sub(r'/(?:[1-9]|[1-9][0-9]|[1-3][0-9][0-9]|400)/', f'/{extracted_string}/', replace_string)
-                vio_path = re.sub(r'/\d{1,3}/', f'/{extracted_string}/', replace_string)
+                # vio_path = re.sub(r'/\d{1,3}/', f'/{extracted_string}/', replace_string)
+                vio_path = args.root_dir + extracted_string + "/imu0_resampled.npy" 
+                
             # print("Generated vio_path:", vio_path)
         else:
             print("Cannot generate vio_path as no extracted string was found")
@@ -180,7 +184,7 @@ class ImuTrackerRunner:
             np.savetxt(self.f_state, self.log_output_buffer, delimiter=",")
             self.log_output_buffer = None
 
-    def run_tracker(self, args):
+    def run_tracker(self, args, iter):
         # initialize debug callbacks
         def initialize_with_vio_at_first_update(this):
             logging.info(
@@ -220,7 +224,7 @@ class ImuTrackerRunner:
                 self.tracker.filter.state.s_bg = np.atleast_2d(vio_bg).T
 
             if self.tracker.filter.initialized:
-                did_update = self.tracker.on_imu_measurement(t_us, gyr_raw, acc_raw)
+                did_update = self.tracker.on_imu_measurement(t_us, gyr_raw, acc_raw, iter)
                 self.add_data_to_be_logged(
                     ts,
                     self.tracker.last_acc_before_next_interp_time,  # beware when imu drops, it might not be what you want here
@@ -242,8 +246,10 @@ class ImuTrackerRunner:
                     self.tracker.on_imu_measurement(t_us, gyr_raw, acc_raw)
                 else:
                     if eval(args.initialize_with_offline_calib):
-                        init_ba = self.tracker.icalib.accelBias
-                        init_bg = self.tracker.icalib.gyroBias
+                        # init_ba = self.tracker.icalib.accelBias
+                        # init_bg = self.tracker.icalib.gyroBias
+                        init_ba = np.zeros((3, 1))
+                        init_bg = np.zeros((3, 1))
                     else:
                         init_ba = np.zeros((3, 1))
                         init_bg = np.zeros((3, 1))
@@ -255,12 +261,21 @@ class ImuTrackerRunner:
                     vio_eul = interp1d(self.input.vio_ts, self.input.vio_eul, axis=0)(
                         ts
                     )
+                    
+                    # print(ts, self.input.vio_ts[0],self.input.vio_ts[-1])
+                    # print(init_ba, init_bg)
+                    print(vio_eul, self.input.vio_eul[0])
+                    assert False
                     vio_R = Rotation.from_euler(
                         "xyz", vio_eul, degrees=True
                     ).as_matrix()
+                    vio_R_0 = Rotation.from_euler(
+                        "xyz", self.input.vio_eul[0], degrees=True
+                    ).as_matrix()
                     self.tracker.init_with_state_at_time(
                         t_us,
-                        vio_R,
+                        # vio_R,
+                        vio_R_0,
                         np.atleast_2d(vio_v).T,
                         np.atleast_2d(vio_p).T,
                         init_ba,

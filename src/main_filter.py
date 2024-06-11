@@ -187,7 +187,7 @@ if __name__ == "__main__":
             logging.info(f"Processing {i} / {n_data} dataset {name}")
             try:
                 trackerRunner = ImuTrackerRunner(args, name)
-                trackerRunner.run_tracker(args)
+                trackerRunner.run_tracker(args, i)
             except FileExistsError as e:
                 print(e)
                 continue

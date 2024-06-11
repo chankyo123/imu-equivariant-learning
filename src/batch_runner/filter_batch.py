@@ -79,7 +79,9 @@ if __name__ == "__main__":
     logging.info(f"Found {len(all_models)} models")
     logging.info(f"Found {all_models}")
 
-    update_frequency_list = [10]
+    # update_frequency_list = [10]
+    update_frequency_list = [200]
+    # update_frequency_list = [1000]
     for update_frequency in update_frequency_list:
         try:
             os.mkdir(f"./{args.out_dir}_uf{update_frequency}")

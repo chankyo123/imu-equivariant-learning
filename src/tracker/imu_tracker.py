@@ -351,7 +351,6 @@ class ImuTracker:
                 # acc_raw, gyr_raw, t_us, m_b2bprime
                 acc_raw, gyr_raw, t_augmentation_us, m_b2bprime
             )
-            # print("propagation working!")
             
         # filter update
         did_update = False
@@ -387,10 +386,9 @@ class ImuTracker:
         
         # t_end_us = t_us
         t_end_us = self.filter.state.si_timestamps_us[-1]  # always the last state
-        t_begin_us = t_end_us - 1000000
         
-        # t_begin_us = t_us + 99000
-        # t_end_us = t_us + 1000000 + 99000
+        # t_begin_us = t_end_us - 1000000   #200hz
+        t_begin_us = t_end_us - 100000  #20hz
         t_oldest_state_us = t_begin_us
         
         # t_oldest_state_us = self.filter.state.si_timestamps_us[
@@ -535,7 +533,7 @@ class ImuTracker:
             
             meas = meas_gt
             meas_cov = meas_gt
-            if ts_data.size < 3 or v_data.shape[0] < 1000:
+            if ts_data.size < 3 or v_data.shape[0] < self.update_freq:
                 # print(ts_data.size, v_data.shape[0])
                 # print("using gt")
                 meas = np.array([interp_func(t_end_us) for interp_func in interp_funcs]).reshape(3,-1)
@@ -550,16 +548,33 @@ class ImuTracker:
                 #     v_at_timestamp = v_data[5*(-199+i)-1, :]
                 #     v_at_timestamp_bd = v_at_timestamp
                 #     net_vel_body = np.vstack((net_vel_body, v_at_timestamp_bd.reshape(3)))
-                step = 5
-                indices = np.arange(-199, 1) * step + (v_data.shape[0] - 1)
-                # print(indices)
-                timestamps = t_begin_us + np.arange(num_data) * 5000
-                assert np.all(ts_data[indices] <= t_end_us), "Timestamp data out of range"
-                net_vel_body = v_data[indices, :]
-                
-                # print(net_vel_body.shape)
-                # t_data = ts_data[indices]
-                # print(t_data[-1], t_end_us)
+                if self.update_freq == 1000:
+                    step = 5
+                    indices = np.arange(-199, 1) * step + (v_data.shape[0] - 1)
+                    print(v_data.shape[0])
+                    print(indices)
+                    # assert False
+                    timestamps = t_begin_us + np.arange(num_data) * 5000
+                    assert np.all(ts_data[indices] <= t_end_us), "Timestamp data out of range"
+                    net_vel_body = v_data[indices, :]
+                    
+                    # print(net_vel_body.shape)
+                    t_data = ts_data[indices]
+                    print(t_data[-10:])
+                    assert False
+                elif self.update_freq == 200:
+                    step = 1
+                    indices = np.arange(-19, 1) * step + (v_data.shape[0] - 1)
+                    # print(v_data.shape[0])
+                    # print(indices)
+                    assert np.all(ts_data[indices] <= t_end_us), "Timestamp data out of range"
+                    net_vel_body = v_data[indices, :]
+                    
+                    # print(net_vel_body.shape)
+                    t_data = ts_data[indices]
+                    # print(t_data[-10:], t_end_us)
+                    # assert False
+                    
                 
                 net_ori_b2w = None
                 input_4 = False

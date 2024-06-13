@@ -427,6 +427,7 @@ class ImuMSCKF:
         dimP = P.shape[0]
         dimTheta = 6  # b_ak, b_gk
         if t_us:
+            # print("propagation working!")
             dt_us = t_us - self.state.s_timestamp_us
             dt = dt_us * 1e-6
             

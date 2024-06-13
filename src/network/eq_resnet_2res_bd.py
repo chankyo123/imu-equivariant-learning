@@ -200,6 +200,10 @@ class FcBlock(nn.Module):
         )
         self.bn1 = VNBatchNorm(self.prep_channel, dim=3)
         # fc layers
+        ## TODO: check if linear contain bias
+        # self.fc1 = nn.Linear(self.prep_channel * self.in_dim, self.fc_dim, bias = False)
+        # self.fc2 = nn.Linear(self.fc_dim, self.fc_dim, bias = False)
+        # self.fc3 = nn.Linear(self.fc_dim, self.out_channel, bias = False)
         self.fc1 = nn.Linear(self.prep_channel * self.in_dim, self.fc_dim)
         self.fc2 = nn.Linear(self.fc_dim, self.fc_dim)
         self.fc3 = nn.Linear(self.fc_dim, self.out_channel)
@@ -247,6 +251,14 @@ class FcBlock(nn.Module):
         x = self.fc3(x)
         x = torch.permute(x,(0,2,1)) 
         
+        # if self.fc1.bias is not None:
+        #     print("The fc1 layer has a bias term.")
+        # if self.fc2.bias is not None:
+        #     print("The fc2 layer has a bias term.")
+        # if self.fc3.bias is not None:
+        #     print("The fc3 layer has a bias term.")
+            
+            
         if self.out_channel == 1: #[n x 3]
             x = x.squeeze(dim=1)
 
@@ -385,10 +397,10 @@ class VN_ResNet1D(nn.Module):
         # This improves the model by 0.2~0.3% according to https://arxiv.org/abs/1706.02677
         if zero_init_residual:
             for m in self.modules():
-                if isinstance(m, Bottleneck1D):
-                    nn.init.constant_(m.bn3.weight, 0)
-                elif isinstance(m, BasicBlock1D):
-                    nn.init.constant_(m.bn2.weight, 0)
+                # if isinstance(m, Bottleneck1D):
+                #     nn.init.constant_(m.bn3.weight, 0)
+                if isinstance(m, VN_BasicBlock1D):
+                    nn.init.constant_(m.bn2.bn.weight, 0)
 
     def get_num_params(self):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
@@ -536,28 +548,29 @@ class VN_ResNet1D(nn.Module):
 
         mean_vel = self.output_block3(x)  # bodyframe velocity
         
-        # >>> SO(3) Equivariance Check : (3,1) vector and (3,3) covariance
+        # # >>> SO(3) Equivariance Check : (3,1) vector and (3,3) covariance
          
         # print('value x after layers : ',mean[:1,:])    
+        # print()
         # rotation_matrix = np.array([[0.1097, 0.1448, 0.9834],[0.8754, -0.4827, -0.0266],[0.4708, 0.8637, -0.1797]])
         # rotation_matrix = torch.from_numpy(rotation_matrix).to('cuda').to(torch.float32)
         # mean_rot = torch.matmul(rotation_matrix, mean.permute(1,0)).permute(1,0)
         # print('rotated value x after layers : ', mean_rot[:1,]) 
         
-        #1. using tlio's cov
-        # print('covariance after layers : ',covariance[:1,:])    
-        # rotation_matrix = np.array([[0.1097, 0.1448, 0.9834],[0.8754, -0.4827, -0.0266],[0.4708, 0.8637, -0.1797]])
-        # rotation_matrix = torch.from_numpy(rotation_matrix).to('cuda').to(torch.float32)
-        # covariance_rot = torch.matmul(torch.matmul(rotation_matrix, covariance.permute(1,0)).permute(1,0), rotation_matrix.T)
-        # print('rotated value x after layers : ', covariance_rot[:1,:]) 
+        # #1. using tlio's cov
+        # # print('covariance after layers : ',covariance[:1,:])    
+        # # rotation_matrix = np.array([[0.1097, 0.1448, 0.9834],[0.8754, -0.4827, -0.0266],[0.4708, 0.8637, -0.1797]])
+        # # rotation_matrix = torch.from_numpy(rotation_matrix).to('cuda').to(torch.float32)
+        # # covariance_rot = torch.matmul(torch.matmul(rotation_matrix, covariance.permute(1,0)).permute(1,0), rotation_matrix.T)
+        # # print('rotated value x after layers : ', covariance_rot[:1,:]) 
         
-        #2. using 3*3 cov
-        # print('covariance after layers : ',covariance[:1,:,:])    
-        # rotation_matrix = np.array([[0.1097, 0.1448, 0.9834],[0.8754, -0.4827, -0.0266],[0.4708, 0.8637, -0.1797]])
-        # rotation_matrix = torch.from_numpy(rotation_matrix).to('cuda').to(torch.float32)
-        # covariance_rot = torch.matmul(torch.matmul(rotation_matrix, covariance.permute(1,2,0)).permute(2,0,1), rotation_matrix.T)
-        # print('rotated value x after layers : ', covariance_rot[:1,:,:]) 
-        # <<< SO(3) Equivariance Check
+        # #2. using 3*3 cov
+        # # print('covariance after layers : ',covariance[:1,:,:])    
+        # # rotation_matrix = np.array([[0.1097, 0.1448, 0.9834],[0.8754, -0.4827, -0.0266],[0.4708, 0.8637, -0.1797]])
+        # # rotation_matrix = torch.from_numpy(rotation_matrix).to('cuda').to(torch.float32)
+        # # covariance_rot = torch.matmul(torch.matmul(rotation_matrix, covariance.permute(1,2,0)).permute(2,0,1), rotation_matrix.T)
+        # # print('rotated value x after layers : ', covariance_rot[:1,:,:]) 
+        # # <<< SO(3) Equivariance Check
             
         
         return mean, covariance, mean_vel

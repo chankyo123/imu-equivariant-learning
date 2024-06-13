@@ -32,6 +32,7 @@ class TlioData:
         batch_size=1,
         num_workers=1,
         persistent_workers=True,
+        window_time=1,
         only_n_sequence=-1,
         task_subset=None,
         ignore_tasks=None,
@@ -81,6 +82,7 @@ class TlioData:
         self.test_dataset = None
         self.transform_done_in_dataloader = False
         self.dataset_style = dataset_style
+        self.data_window_config["window_size"] = int(200 * window_time)
 
     #def setup(self, stage=None):
 

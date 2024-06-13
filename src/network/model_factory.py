@@ -34,7 +34,8 @@ def get_model(arch, net_config, input_dim=6, output_dim=3):
         )
     elif arch == "vn_resnet":
         network = VN_ResNet1D(
-            VN_BasicBlock1D, input_dim, output_dim, [2, 2, 2, 2], net_config["in_dim"]
+            # VN_BasicBlock1D, input_dim, output_dim, [2, 2, 2, 2], net_config["in_dim"]
+            VN_BasicBlock1D, input_dim, output_dim, [2, 2, 2, 2], net_config["in_dim"], True
         )
     elif arch == "resnet_seq":
         network = ResNetSeq1D(

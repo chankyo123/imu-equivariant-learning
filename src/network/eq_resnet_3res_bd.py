@@ -200,9 +200,9 @@ class FcBlock(nn.Module):
         )
         self.bn1 = VNBatchNorm(self.prep_channel, dim=3)
         # fc layers
-        self.fc1 = nn.Linear(self.prep_channel * self.in_dim, self.fc_dim)
-        self.fc2 = nn.Linear(self.fc_dim, self.fc_dim)
-        self.fc3 = nn.Linear(self.fc_dim, self.out_channel)
+        self.fc1 = nn.Linear(self.prep_channel * self.in_dim, self.fc_dim, bias = False)
+        self.fc2 = nn.Linear(self.fc_dim, self.fc_dim, bias = False)
+        self.fc3 = nn.Linear(self.fc_dim, self.out_channel, bias = False)
         self.relu = VNLeakyReLU(self.fc_dim,negative_slope=0.0)
         self.dropout = nn.Dropout(0.5)
 
@@ -241,6 +241,12 @@ class FcBlock(nn.Module):
         x = self.relu(x)
         
         # x = self.dropout(x)   
+        # if self.fc1.bias is not None:
+        #     print("The fc1 layer has a bias term.")
+        # if self.fc2.bias is not None:
+        #     print("The fc2 layer has a bias term.")
+        # if self.fc3.bias is not None:
+        #     print("The fc3 layer has a bias term.")
         
         # x = self.fc3.to('cuda')(x)
         x = torch.permute(x,(0,2,1)) 
@@ -385,9 +391,7 @@ class VN_ResNet1D(nn.Module):
         # This improves the model by 0.2~0.3% according to https://arxiv.org/abs/1706.02677
         if zero_init_residual:
             for m in self.modules():
-                if isinstance(m, Bottleneck1D):
-                    nn.init.constant_(m.bn3.weight, 0)
-                elif isinstance(m, BasicBlock1D):
+                if isinstance(m, BasicBlock1D):
                     nn.init.constant_(m.bn2.weight, 0)
 
     def get_num_params(self):

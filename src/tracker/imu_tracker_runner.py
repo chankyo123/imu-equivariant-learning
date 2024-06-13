@@ -264,8 +264,8 @@ class ImuTrackerRunner:
                     
                     # print(ts, self.input.vio_ts[0],self.input.vio_ts[-1])
                     # print(init_ba, init_bg)
-                    print(vio_eul, self.input.vio_eul[0])
-                    assert False
+                    # print(vio_eul, self.input.vio_eul[0])
+                    # assert False
                     vio_R = Rotation.from_euler(
                         "xyz", vio_eul, degrees=True
                     ).as_matrix()
@@ -274,8 +274,8 @@ class ImuTrackerRunner:
                     ).as_matrix()
                     self.tracker.init_with_state_at_time(
                         t_us,
-                        # vio_R,
-                        vio_R_0,
+                        vio_R,
+                        # vio_R_0,
                         np.atleast_2d(vio_v).T,
                         np.atleast_2d(vio_p).T,
                         init_ba,

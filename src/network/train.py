@@ -171,9 +171,9 @@ def do_train(network, train_loader, device, epoch, optimizer, input_dim, transfo
         #     pred_rot, pred_cov_rot, pred_vel_rot = network(feat_rot)
         # else:
         #     pred_rot, pred_cov_rot = network(feat_rot)
-        # print(torch.matmul(pred,rotation_matrix)[:3,:3])
-        # print(pred_rot[:3,:3])
-        # print()
+        # # print(torch.matmul(pred_vel,rotation_matrix)[:3,:3])
+        # # print(pred_vel_rot[:3,:3])
+        # # print()
 
         if len(pred.shape) == 2:
             targ = sample["targ_dt_World"][:,-1,:]
@@ -398,6 +398,7 @@ def net_train(args):
         dataset_style=args.dataset_style, 
         num_workers=args.workers,
         persistent_workers=args.persistent_workers,
+        window_time=args.window_time
     )
     data.prepare_data()
     

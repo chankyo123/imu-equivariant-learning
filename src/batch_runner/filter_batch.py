@@ -80,7 +80,8 @@ if __name__ == "__main__":
     logging.info(f"Found {all_models}")
 
     # update_frequency_list = [10]
-    update_frequency_list = [200]
+    update_frequency_list = [20]
+    # update_frequency_list = [200]
     # update_frequency_list = [1000]
     for update_frequency in update_frequency_list:
         try:

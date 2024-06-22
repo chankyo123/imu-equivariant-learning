@@ -62,10 +62,11 @@ class ImuBuffer:
         assert isinstance(t_us_end, int)
         update_freq = int(update_freq)
         
+        # print(t_begin_us, t_end_us, self.net_t_us)
         begin_idx = np.where(self.net_t_us == t_begin_us)[0][0]
         end_idx = np.where(self.net_t_us == t_us_end)[0][0]
         if update_freq == 1000:
-            indices = np.arange(begin_idx + 5, end_idx + 10, 5)
+            indices = np.arange(begin_idx, end_idx + 5, 5)
         else:
             indices = np.arange(begin_idx, end_idx + 1, 1)
             
@@ -86,6 +87,8 @@ class ImuBuffer:
         # net_acc = self.net_acc[begin_idx : end_idx + 1, :]
         # net_gyr = self.net_gyr[begin_idx : end_idx + 1, :]
         # net_t_us = self.net_t_us[begin_idx : end_idx + 1]
+        
+        # print(self.net_acc.shape, indices)
         net_acc = self.net_acc[indices]
         net_gyr = self.net_gyr[indices]
         net_t_us = self.net_t_us[indices]

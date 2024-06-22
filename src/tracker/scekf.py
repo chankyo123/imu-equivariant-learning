@@ -440,10 +440,10 @@ class ImuMSCKF:
             # P_pred[-6:, -6:] += dt * self.Q
             # P_pred = Phi @ P @ Phi.T
             
-            # #if no bias update
-            P_pred[:dimP - dimTheta, dimP - dimTheta:] = np.zeros((dimP - dimTheta, dimTheta))
-            P_pred[dimP - dimTheta:, :dimP - dimTheta] = np.zeros((dimTheta, dimP - dimTheta))
-            P_pred[dimP - dimTheta:, dimP - dimTheta:] = np.eye(dimTheta)
+            # # #if no bias update
+            # P_pred[:dimP - dimTheta, dimP - dimTheta:] = np.zeros((dimP - dimTheta, dimTheta))
+            # P_pred[dimP - dimTheta:, :dimP - dimTheta] = np.zeros((dimTheta, dimP - dimTheta))
+            # P_pred[dimP - dimTheta:, dimP - dimTheta:] = np.eye(dimTheta)
             
             # ------------ Propagate Mean ------------- #
             phi = w * dt
@@ -501,11 +501,11 @@ class ImuMSCKF:
         # assert False
         dimTheta = self.state.dimTheta
 
-        # # if no bias update
-        # Theta = np.zeros((6,1))
-        P[dimP-dimTheta:dimP-dimTheta+6,dimP-dimTheta:dimP-dimTheta+6] = 0.0001*np.eye(6)
-        P[0:dimP-dimTheta,dimP-dimTheta:dimP] = np.zeros((dimP-dimTheta,dimTheta))
-        P[dimP-dimTheta:dimP,0:dimP-dimTheta] = np.zeros((dimTheta,dimP-dimTheta))
+        # # # if no bias update
+        # # Theta = np.zeros((6,1))
+        # P[dimP-dimTheta:dimP-dimTheta+6,dimP-dimTheta:dimP-dimTheta+6] = 0.0001*np.eye(6)
+        # P[0:dimP-dimTheta,dimP-dimTheta:dimP] = np.zeros((dimP-dimTheta,dimTheta))
+        # P[dimP-dimTheta:dimP,0:dimP-dimTheta] = np.zeros((dimTheta,dimP-dimTheta))
 
         # # Map from left invariant to right invariant error temporarily
         # if self.state.InEKF_ErrorType == 'LeftInvariant':
@@ -515,8 +515,8 @@ class ImuMSCKF:
         
         
         # N = 0.1*np.eye(3) #so3 3으로 해보다가 1로 바꿈
-        # N = 1*np.eye(3) #used when using gtv
-        N = 5*np.eye(3)
+        N = 1*np.eye(3) #used when using gtv
+        # N = 5*np.eye(3)
         # N = 0.1*np.eye(3)
         # N = 0.01*np.eye(3)
         
@@ -943,19 +943,17 @@ class ImuMSCKF:
             Phi[6:9,0:3] = 0.5*gx*dt2
             Phi[6:9,3:6] = np.eye(3)*dt
             
-            # #if bias update
-            # Phi[0:3,dimP-dimTheta:dimP-dimTheta+3] = -RG1dt
-            # Phi[3:6,dimP-dimTheta:dimP-dimTheta+3] = -skew(v+RG1dt@a+self.g*dt)@RG1dt + RG0@Phi25L
-            # Phi[6:9,dimP-dimTheta:dimP-dimTheta+3] = -skew(p+v*dt+RG2dt2@a+0.5*self.g*dt2)@RG1dt + RG0@Phi35L
+            #if bias update
+            Phi[0:3,dimP-dimTheta:dimP-dimTheta+3] = -RG1dt
+            Phi[3:6,dimP-dimTheta:dimP-dimTheta+3] = -skew(v+RG1dt@a+self.g*dt)@RG1dt + RG0@Phi25L
+            Phi[6:9,dimP-dimTheta:dimP-dimTheta+3] = -skew(p+v*dt+RG2dt2@a+0.5*self.g*dt2)@RG1dt + RG0@Phi35L
+            for i in range(5, dimX):
+                Phi[(i - 2) * 3:(i - 2) * 3 + 3, dimP - dimTheta:dimP] = -skew(self.state.get_vector(i)) @ RG1dt
+            Phi[3:6,dimP-dimTheta+3:dimP-dimTheta+6] = -RG1dt
+            Phi[6:9,dimP-dimTheta+3:dimP-dimTheta+6] = -RG2dt2
             
-            
-            # for i in range(5, dimX):
-            #     Phi[(i - 2) * 3:(i - 2) * 3 + 3, dimP - dimTheta:dimP] = -skew(self.state.get_vector(i)) @ RG1dt
-            # Phi[3:6,dimP-dimTheta+3:dimP-dimTheta+6] = -RG1dt
-            # Phi[6:9,dimP-dimTheta+3:dimP-dimTheta+6] = -RG2dt2
-            
-            #else
-            Phi[:, dimP - dimTheta:] = np.zeros((dimP, dimTheta))
+            # if no bias update
+            # Phi[:, dimP - dimTheta:] = np.zeros((dimP, dimTheta))
 
         return Phi
     
@@ -986,9 +984,9 @@ class ImuMSCKF:
         Qc[0:3,0:3] = self.W[0:3,0:3]
         Qc[3:6,3:6] = self.W[3:6,3:6]
 
-        # #if bias update
-        # Qc[dimP-dimTheta:dimP-dimTheta+3,dimP-dimTheta:dimP-dimTheta+3] = self.Q[0:3,0:3]
-        # Qc[dimP-dimTheta+3:dimP-dimTheta+6,dimP-dimTheta+3:dimP-dimTheta+6] = self.Q[3:6,3:6]
+        #if bias update
+        Qc[dimP-dimTheta:dimP-dimTheta+3,dimP-dimTheta:dimP-dimTheta+3] = self.Q[0:3,0:3]
+        Qc[dimP-dimTheta+3:dimP-dimTheta+6,dimP-dimTheta+3:dimP-dimTheta+6] = self.Q[3:6,3:6]
 
         # Noise Covariance Discretization
         PhiG = Phi@G

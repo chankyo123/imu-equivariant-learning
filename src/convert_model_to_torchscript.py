@@ -38,6 +38,7 @@ def load_and_convert(args):
     # input_sequence_dim = past_data_size + disp_window_size
     input_sequence_dim = 200 #200hz
     # input_sequence_dim = 20 #20hz
+    # input_sequence_dim = 100 #100hz
 
     traced_cell = torch.jit.trace(net, torch.zeros(1, input_dim, input_sequence_dim).to(device))
     traced_cell.save(args.out_dir + "/model_torchscript.pt")

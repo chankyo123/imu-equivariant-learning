@@ -184,7 +184,7 @@ class ImuTrackerRunner:
             np.savetxt(self.f_state, self.log_output_buffer, delimiter=",")
             self.log_output_buffer = None
 
-    def run_tracker(self, args, iter):
+    def run_tracker(self, args, iter_num):
         # initialize debug callbacks
         def initialize_with_vio_at_first_update(this):
             logging.info(
@@ -224,7 +224,8 @@ class ImuTrackerRunner:
                 self.tracker.filter.state.s_bg = np.atleast_2d(vio_bg).T
 
             if self.tracker.filter.initialized:
-                did_update = self.tracker.on_imu_measurement(t_us, gyr_raw, acc_raw, iter)
+                progress = i / n_data
+                did_update = self.tracker.on_imu_measurement(t_us, gyr_raw, acc_raw, iter_num, progress)
                 self.add_data_to_be_logged(
                     ts,
                     self.tracker.last_acc_before_next_interp_time,  # beware when imu drops, it might not be what you want here

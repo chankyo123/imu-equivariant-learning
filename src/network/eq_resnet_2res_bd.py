@@ -201,12 +201,12 @@ class FcBlock(nn.Module):
         self.bn1 = VNBatchNorm(self.prep_channel, dim=3)
         # fc layers
         ## TODO: check if linear contain bias
-        # self.fc1 = nn.Linear(self.prep_channel * self.in_dim, self.fc_dim, bias = False)
-        # self.fc2 = nn.Linear(self.fc_dim, self.fc_dim, bias = False)
-        # self.fc3 = nn.Linear(self.fc_dim, self.out_channel, bias = False)
-        self.fc1 = nn.Linear(self.prep_channel * self.in_dim, self.fc_dim)
-        self.fc2 = nn.Linear(self.fc_dim, self.fc_dim)
-        self.fc3 = nn.Linear(self.fc_dim, self.out_channel)
+        self.fc1 = nn.Linear(self.prep_channel * self.in_dim, self.fc_dim, bias = False)
+        self.fc2 = nn.Linear(self.fc_dim, self.fc_dim, bias = False)
+        self.fc3 = nn.Linear(self.fc_dim, self.out_channel, bias = False)
+        # self.fc1 = nn.Linear(self.prep_channel * self.in_dim, self.fc_dim)
+        # self.fc2 = nn.Linear(self.fc_dim, self.fc_dim)
+        # self.fc3 = nn.Linear(self.fc_dim, self.out_channel)
         self.relu = VNLeakyReLU(self.fc_dim,negative_slope=0.0)
         self.dropout = nn.Dropout(0.5)
 

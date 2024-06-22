@@ -148,6 +148,7 @@ class ImuTracker:
         self.json_path = json_path
         self.use_riekf = use_riekf
         self.input_3 = input_3
+        print("self.update_freq : ", self.update_freq)
         
     @jit(forceobj=True, parallel=False, cache=False)
     def _get_imu_samples_for_network(self, t_begin_us, t_oldest_state_us, t_end_us):
@@ -158,7 +159,7 @@ class ImuTracker:
         net_acc, net_gyr, net_tus = self.imu_buffer.get_data_from_to(
             net_tus_begin, net_tus_end, self.update_freq
         )
-
+        # print(net_tus[-10:])
         # print(net_gyr.shape, self.net_input_size, net_tus.shape)
         assert net_gyr.shape[0] == self.net_input_size
         assert net_acc.shape[0] == self.net_input_size
@@ -271,18 +272,18 @@ class ImuTracker:
         self.filter.initialize(t_us, acc_biascpst, init_ba, init_bg, self.use_riekf)
         self._after_filter_init_member_setup(t_us, gyr_biascpst, acc_biascpst)
 
-    def on_imu_measurement(self, t_us, gyr_raw, acc_raw, i):
+    def on_imu_measurement(self, t_us, gyr_raw, acc_raw, i, progress):
         assert isinstance(t_us, int)
         if t_us - self.last_t_us > 3e3:
             logging.warning(f"Big IMU gap : {t_us - self.last_t_us}us")
 
         if self.filter.initialized:
-            return self._on_imu_measurement_after_init(t_us, gyr_raw, acc_raw, i)
+            return self._on_imu_measurement_after_init(t_us, gyr_raw, acc_raw, i, progress)
         else:
             self._init_without_state_at_time(t_us, gyr_raw, acc_raw)
             return False
 
-    def _on_imu_measurement_after_init(self, t_us, gyr_raw, acc_raw, i):
+    def _on_imu_measurement_after_init(self, t_us, gyr_raw, acc_raw, i, progress):
         """
         For new IMU measurement, after the filter has been initialized
         """
@@ -339,7 +340,7 @@ class ImuTracker:
             # print("propagate running!")
             
         else:
-            if "sim" not in self.vio_path:
+            if "so3" in self.vio_path:
                 rotation_info = np.load("./../so3_local_data_bodyframe2/rpy_values.npy")
                 rotation_rpy = rotation_info[i,:]
                 m_b2bprime = Rotation.from_euler('xyz', rotation_rpy, degrees=False).as_matrix()
@@ -363,10 +364,12 @@ class ImuTracker:
                 self.next_aug_t_us += self.dt_update_us
         else:
             if do_augmentation_and_update:
-                did_update = self._process_update_riekf(t_us)   
+                did_update = self._process_update_riekf(t_us, progress)   
                 # print("update working!")
                 # print(t_us, self.next_aug_t_us)
-                self.next_aug_t_us += self.dt_update_us
+                
+                # self.next_aug_t_us += self.dt_update_us
+                self.next_aug_t_us += self.dt_interp_us  #이걸로 항상 고정
 
         # set last value memory to the current one
         self.last_t_us = t_us
@@ -378,7 +381,7 @@ class ImuTracker:
 
         return did_update
 
-    def _process_update_riekf(self, t_us):
+    def _process_update_riekf(self, t_us, progress):
         logging.debug(f"Upd. @ {t_us * 1e-6} | Ns: {self.filter.state.N} ")
         # get update interval t_begin_us and t_end_us
         # if self.filter.state.N <= self.update_distance_num_clone:
@@ -551,8 +554,8 @@ class ImuTracker:
                 if self.update_freq == 1000:
                     step = 5
                     indices = np.arange(-199, 1) * step + (v_data.shape[0] - 1)
-                    print(v_data.shape[0])
-                    print(indices)
+                    # print(v_data.shape[0])
+                    # print(indices)
                     # assert False
                     timestamps = t_begin_us + np.arange(num_data) * 5000
                     assert np.all(ts_data[indices] <= t_end_us), "Timestamp data out of range"
@@ -560,21 +563,49 @@ class ImuTracker:
                     
                     # print(net_vel_body.shape)
                     t_data = ts_data[indices]
-                    print(t_data[-10:])
-                    assert False
+                    # print(t_data[-10:])
+                    # assert False
                 elif self.update_freq == 200:
                     step = 1
                     indices = np.arange(-19, 1) * step + (v_data.shape[0] - 1)
+                    t_data = ts_data[indices]
                     # print(v_data.shape[0])
                     # print(indices)
                     assert np.all(ts_data[indices] <= t_end_us), "Timestamp data out of range"
+                    ##1. use filter velocity
                     net_vel_body = v_data[indices, :]
+                    # ##2. use gt velocity
+                    # net_vel_body = np.array([interp_func(t_data) for interp_func in interp_funcs]).T
                     
                     # print(net_vel_body.shape)
-                    t_data = ts_data[indices]
                     # print(t_data[-10:], t_end_us)
                     # assert False
+                elif self.update_freq == 20:
+                    step = 1
+                    indices = np.arange(-19, 1) * step + (v_data.shape[0] - 1)
+                    t_data = ts_data[indices]
+                    # print(v_data.shape[0])
+                    # print(indices)
+                    assert np.all(ts_data[indices] <= t_end_us), "Timestamp data out of range"
                     
+                    # ##1. use filter velocity
+                    # net_vel_body = v_data[indices, :]
+                    
+                    # ##2. use gt velocity
+                    # net_vel_body = np.array([interp_func(t_data) for interp_func in interp_funcs]).T
+                    
+                    ##3. combination of using measurement after gt
+                    if progress < 0.5 : 
+                        net_vel_body = np.array([interp_func(t_data) for interp_func in interp_funcs]).T
+                    else:
+                        net_vel_body = v_data[indices, :]
+                    # print("progress : ", progress)
+                        
+                    # print("2 : ", net_vel_body.shape)
+                    
+                    # print(net_vel_body.shape)
+                    # print(self.imu_buffer.net_t_us[-10:], t_end_us) #diff : 5000 
+                    # print(t_data[-10:], t_end_us)   #diff : 5000 
                 
                 net_ori_b2w = None
                 input_4 = False
@@ -584,7 +615,6 @@ class ImuTracker:
                 # print(meas.reshape(-1)-meas_gt.reshape(-1))
             # print(t_end_us, ts_data)
             # print(meas.reshape(-1)-meas_gt.reshape(-1), meas_gt.reshape(-1))
-            
             # print(interpolated_velocity.reshape(3,-1) - meas)
             
         #for equiv-cov
@@ -644,9 +674,11 @@ class ImuTracker:
             net_gyr_w, net_acc_w = self._get_imu_samples_for_network(
                 t_begin_us, t_oldest_state_us, t_end_us
             )
+            # print(self.imu_buffer.net_t_us[-10:]) #diff : 10000 
             meas, meas_cov = self.meas_source.get_displacement_measurement(
                 net_gyr_w, net_acc_w
             )
+            
         # filter update
         self.filter.update(meas, meas_cov, t_oldest_state_us, t_end_us)
         self.has_done_first_update = True
@@ -669,6 +701,13 @@ class ImuTracker:
             self.next_interp_t_us,
         )
         
-        # self.next_interp_t_us += self.dt_interp_us
         # self.next_interp_t_us += int(self.dt_interp_us / 5)
-        self.next_interp_t_us += self.dt_update_us
+        if self.update_freq == 20:
+            # self.next_interp_t_us += int(self.dt_interp_us/5)
+            self.next_interp_t_us += self.dt_interp_us
+        # elif self.update_freq == 1000:
+        #     self.next_interp_t_us += int(self.dt_interp_us/5)
+        else:
+            self.next_interp_t_us += self.dt_update_us
+            
+            

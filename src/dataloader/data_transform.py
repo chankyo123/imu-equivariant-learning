@@ -36,23 +36,23 @@ class TransformAddNoiseBias:
                 # assert feat.shape[1] == 6
                 if feat.shape[1] == 6:
                     None
-                    # shift in the accel and gyro bias terms
-                    feat_aug[:, :3, :] += (
-                        (torch.rand(N, 3, 1, device=feat.device, dtype=feat.dtype) - 0.5)
-                        * self.gyro_bias_range / 0.5
-                    )
-                    feat_aug[:, 3:6, :] += (
-                        (torch.rand(N, 3, 1, device=feat.device, dtype=feat.dtype) - 0.5)
-                        * self.accel_bias_range / 0.5
-                    )
+                    # # shift in the accel and gyro bias terms
+                    # feat_aug[:, :3, :] += (
+                    #     (torch.rand(N, 3, 1, device=feat.device, dtype=feat.dtype) - 0.5)
+                    #     * self.gyro_bias_range / 0.5
+                    # )
+                    # feat_aug[:, 3:6, :] += (
+                    #     (torch.rand(N, 3, 1, device=feat.device, dtype=feat.dtype) - 0.5)
+                    #     * self.accel_bias_range / 0.5
+                    # )
 
-                    # add gaussian noise
-                    feat_aug[:, :3, :] += (
-                        torch.randn(N, 3, T, device=feat.device, dtype=feat.dtype) * self.gyro_noise_std
-                    )
-                    feat_aug[:, 3:6, :] += (
-                        torch.randn(N, 3, T, device=feat.device, dtype=feat.dtype) * self.accel_noise_std
-                    )
+                    # # add gaussian noise
+                    # feat_aug[:, :3, :] += (
+                    #     torch.randn(N, 3, T, device=feat.device, dtype=feat.dtype) * self.gyro_noise_std
+                    # )
+                    # feat_aug[:, 3:6, :] += (
+                    #     torch.randn(N, 3, T, device=feat.device, dtype=feat.dtype) * self.accel_noise_std
+                    # )
                 elif feat.shape[1] == 9 or feat.shape[1] == 18:
                     # shift in the accel and gyro bias terms, also add bias in vel_body
                     # print('here')

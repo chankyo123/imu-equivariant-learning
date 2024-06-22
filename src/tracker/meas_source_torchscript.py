@@ -46,7 +46,7 @@ class MeasSourceTorchScript:
 
             if type(outputs) == tuple:  # Legacy
                 # if input_3: 
-                if "eq" in self.model_path : 
+                if "eq_" in self.model_path : 
                     a, meas_cov, meas = outputs
                 else:
                     meas, meas_cov = outputs

@@ -390,7 +390,7 @@ class ImuTracker:
         # t_end_us = t_us
         t_end_us = self.filter.state.si_timestamps_us[-1]  # always the last state
         
-        window_time = int(self.update_distance_num_clone/200*1e6)
+        window_time = int(self.net_input_size/200*1e6)
         t_begin_us = t_end_us - window_time
         # t_begin_us = t_end_us - 1500000   #300hz
         # t_begin_us = t_end_us - 1000000   #200hz
@@ -540,7 +540,7 @@ class ImuTracker:
             meas = meas_gt
             meas_cov = meas_gt
             # if ts_data.size < 3 or v_data.shape[0] < self.update_freq:
-            if ts_data.size < 3 or v_data.shape[0] < self.update_distance_num_clone:
+            if ts_data.size < 3 or v_data.shape[0] < self.net_input_size:
                 # print(ts_data.size, v_data.shape[0])
                 # print("using gt")
                 meas = np.array([interp_func(t_end_us) for interp_func in interp_funcs]).reshape(3,-1)
@@ -586,7 +586,7 @@ class ImuTracker:
                     # assert False
                 elif self.update_freq == 20:
                     step = 1
-                    indices = np.arange(-(self.update_distance_num_clone-1), 1) * step + (v_data.shape[0] - 1)
+                    indices = np.arange(-(self.net_input_size-1), 1) * step + (v_data.shape[0] - 1)
                     t_data = ts_data[indices]
                     # print(v_data.shape[0])
                     # print(indices)

@@ -18,6 +18,7 @@ from scipy.spatial.transform import Rotation
 from utils.logging import get_logger
 from .sequences_dataset import SequencesDataset
 from .constants import *
+from .data_transform import TransformAddNoiseBias, TransformPerturbGravity, TransformInYawPlane
 
 log = get_logger(__name__)
 
@@ -38,7 +39,25 @@ class MemMappedSequencesDataset(Dataset, SequencesDataset):
         use_index_map=True,
         verbose=False,
         store_in_ram=False,
+        augmentation_options={   
+            "do_bias_shift": True,
+            "bias_shift_options": {
+                # "accel_bias_range": 0.2,
+                # "gyro_bias_range": 0.05,
+                "accel_bias_range": 0.1,
+                "gyro_bias_range": 0.02,
+                "accel_noise_std": 0,
+                "gyro_noise_std": 0,
+                "mag_bias_range": 0.05, # In Gauss (.25-.65 Gauss is normal on earth)
+                "barom_press_bias_range": 0.01, # In Pascals (always near 1.0)
+                "barom_temp_bias_range": 1, # In deg celcius
+            },
+            "perturb_gravity": True,
+            "perturb_gravity_theta_range": 5.0,
+        },
     ):
+        self.augmentation_options = augmentation_options
+        self.genparams = genparams
         SequencesDataset.__init__(
             self,
             data_path=data_path,
@@ -306,3 +325,14 @@ class MemMappedSequencesDataset(Dataset, SequencesDataset):
             return Rotation.from_quat(traj[:,:4]), traj[:,4:7], traj[:,7:] 
         else:
             return Rotation.from_quat(traj[:,:4]), traj[:,4:]
+
+    def get_test_transforms_bodyframe(self):
+        transforms = []
+        print('transformation for bodyframe_training - TEST!')
+        if self.augmentation_options["do_bias_shift"]:
+            transforms.append(
+                TransformAddNoiseBias(self.genparams["input_sensors"],
+                    **self.augmentation_options["bias_shift_options"])
+            )
+        return transforms
+    

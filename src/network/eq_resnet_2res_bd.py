@@ -253,10 +253,17 @@ class FcBlock(nn.Module):
         
         # if self.fc1.bias is not None:
         #     print("The fc1 layer has a bias term.")
+        # else:
+        #     print("The fc1 layer does not has a bias term.")
+            
         # if self.fc2.bias is not None:
         #     print("The fc2 layer has a bias term.")
+        # else:
+        #     print("The fc2 layer does not has a bias term.")
         # if self.fc3.bias is not None:
         #     print("The fc3 layer has a bias term.")
+        # else:
+        #     print("The fc3 layer does not has a bias term.")
             
             
         if self.out_channel == 1: #[n x 3]

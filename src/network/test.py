@@ -503,7 +503,7 @@ def torch_to_numpy(torch_arr):
     return torch_arr.cpu().detach().numpy()
 
 
-def get_inference(network, data_loader, device, epoch, body_frame_3regress):
+def get_inference(network, data_loader, device, epoch, body_frame_3regress, transforms=[]):
     """
     Obtain attributes from a data loader given a network state
     Outputs all targets, predicts, predicted covariance params, and losses in numpy arrays
@@ -515,6 +515,11 @@ def get_inference(network, data_loader, device, epoch, body_frame_3regress):
 
     for bid, sample in enumerate(data_loader):
         sample = to_device(sample, device)
+        
+        for transform in transforms:
+            sample = transform(sample)
+            
+            
         feat = sample["feats"]["imu0"]
         
         # #if random SO(3) rotate in test stage
@@ -727,7 +732,13 @@ def net_test(args):
         body_frame = eval(args.body_frame)
         # Obtain trajectory
         start_t = time.time()
-        net_attr_dict = get_inference(network, seq_loader, device, epoch=50, body_frame_3regress = body_frame_3regress)
+        
+        test_transforms = []
+        # ##UNCOMMENT IF WANT TO ADD BIAS IN TEST DATASET
+        # test_transforms = seq_dataset.get_test_transforms_bodyframe() 
+        # ##UNCOMMENT IF WANT TO ADD BIAS IN TEST DATASET
+        
+        net_attr_dict = get_inference(network, seq_loader, device, epoch=50, body_frame_3regress = body_frame_3regress, transforms = test_transforms)
         end_t = time.time()
         mem_used_max_GB = torch.cuda.max_memory_allocated() / (1024*1024*1024)
         torch.cuda.reset_peak_memory_stats()

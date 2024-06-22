@@ -234,8 +234,8 @@ class SequencesDataset:
                 if "imu" in sensor_name:
                     feat = data_chunk[:,1:7] # gyro, accelerometer
                     if "bodyframe" in self.data_path or "worldframe" not in self.data_path:
-                        # input_3 = False
-                        input_3 = True
+                        input_3 = False
+                        # input_3 = True
                         # print("input_3 : ", input_3)
                         if input_3:
                             feat_vel_body = data_chunk[:, -3:]

@@ -35,7 +35,7 @@ class TransformAddNoiseBias:
             if "imu" in sensor:
                 # assert feat.shape[1] == 6
                 if feat.shape[1] == 6:
-                    
+                    None
                     # shift in the accel and gyro bias terms
                     feat_aug[:, :3, :] += (
                         (torch.rand(N, 3, 1, device=feat.device, dtype=feat.dtype) - 0.5)

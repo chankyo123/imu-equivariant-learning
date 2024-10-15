@@ -42,10 +42,10 @@ class MemMappedSequencesDataset(Dataset, SequencesDataset):
         augmentation_options={   
             "do_bias_shift": True,
             "bias_shift_options": {
-                # "accel_bias_range": 0.2,
-                # "gyro_bias_range": 0.05,
-                "accel_bias_range": 0.1,
-                "gyro_bias_range": 0.02,
+                "accel_bias_range": 0.2,
+                "gyro_bias_range": 0.05,
+                # "accel_bias_range": 0.1,
+                # "gyro_bias_range": 0.02,
                 "accel_noise_std": 0,
                 "gyro_noise_std": 0,
                 "mag_bias_range": 0.05, # In Gauss (.25-.65 Gauss is normal on earth)
@@ -233,6 +233,7 @@ class MemMappedSequencesDataset(Dataset, SequencesDataset):
 
     def __getitem__(self, idx):
         seq_idx, row_in_seq = self.map_index(idx)
+        # print(seq_idx, idx, row_in_seq)
         ret = self.load_and_preprocess_data_chunk(
             seq_idx, row_in_seq, 
             self.data_descriptions[seq_idx][self.get_base_sensor_name()]["num_rows"]-self.genparams.window_size,
@@ -312,6 +313,11 @@ class MemMappedSequencesDataset(Dataset, SequencesDataset):
         end = len(fp) - self.genparams.window_size//2
         if body_frame:
             traj = fp[start_idx:end:self.genparams.decimator,-10:] # [start:stop:step], [ qxyzw_World_Device, pos_World_Device, vel_Body]
+            traj_last_R = fp[start_idx+self.genparams.window_size // 2:end+self.genparams.window_size // 2:self.genparams.decimator,-10:-6] # [start+100:stop+100:step], [ qxyzw_World_Device]
+            
+            # print(fp.shape)
+            # print(traj.shape)
+            # assert False
         else:
             traj = fp[start_idx:end:self.genparams.decimator,-10:-3] # [start:stop:step]
             
@@ -322,7 +328,9 @@ class MemMappedSequencesDataset(Dataset, SequencesDataset):
                     f"Expected off-by-one at most, but got {abs(new_len - len(traj))}"
             traj = traj[:new_len]
         if body_frame: 
-            return Rotation.from_quat(traj[:,:4]), traj[:,4:7], traj[:,7:] 
+            # return Rotation.from_quat(traj[:,:4]), traj[:,4:7], traj[:,7:]
+            return Rotation.from_quat(traj[:,:4]), traj[:,4:7], traj[:,7:], Rotation.from_quat(traj_last_R[:,:4])
+        
         else:
             return Rotation.from_quat(traj[:,:4]), traj[:,4:]
 

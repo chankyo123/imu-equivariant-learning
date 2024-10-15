@@ -74,12 +74,17 @@ def pose_integrate(args, dataset, preds, use_pred_vel, body_frame):
 
     ts = dataset.get_ts_last_imu_us() * 1e-6
     if body_frame:
-        r_gt, pos_gt, vel_body_gt = dataset.get_gt_traj_center_window_times(body_frame)
+        # r_gt, pos_gt, vel_body_gt = dataset.get_gt_traj_center_window_times(body_frame)
+        r_gt, pos_gt, vel_body_gt, r_gt_last = dataset.get_gt_traj_center_window_times(body_frame)
     else:
         r_gt, pos_gt = dataset.get_gt_traj_center_window_times(body_frame)
         
     eul_gt = r_gt.as_euler("xyz", degrees=True)
-    rotation_matrices = r_gt.as_matrix() 
+    if body_frame:
+        rotation_matrices = r_gt_last.as_matrix() 
+    else:
+        rotation_matrices = r_gt.as_matrix() 
+        
     if body_frame:
         if use_pred_vel:
             pred_vels_bd = preds   #body frame velocity
@@ -503,7 +508,7 @@ def torch_to_numpy(torch_arr):
     return torch_arr.cpu().detach().numpy()
 
 
-def get_inference(network, data_loader, device, epoch, body_frame_3regress, transforms=[]):
+def get_inference(network, data_loader, device, epoch, body_frame_3regress, close_loop, transforms=[]):
     """
     Obtain attributes from a data loader given a network state
     Outputs all targets, predicts, predicted covariance params, and losses in numpy arrays
@@ -521,6 +526,7 @@ def get_inference(network, data_loader, device, epoch, body_frame_3regress, tran
             
             
         feat = sample["feats"]["imu0"]
+        # print(feat.shape, feat.type)  ##torch.Size([1024, 9, 200]) <built-in method type of Tensor object at 0x7fd4029700e0>
         
         # #if random SO(3) rotate in test stage
         # rotation_matrix = np.array([[0.1097, 0.1448, 0.9834],[0.8754, -0.4827, -0.0266],[0.4708, 0.8637, -0.1797]])
@@ -540,9 +546,17 @@ def get_inference(network, data_loader, device, epoch, body_frame_3regress, tran
             pred, pred_cov, pred_vel = network(feat)
             targ_vel = sample["vel_Body"][:,-1,:]
         else:
-            pred, pred_cov = network(feat)
-            pred_vel = pred
-            targ_vel =torch.zeros_like(pred_vel)
+            if close_loop:
+                if bid == 0:
+                    previous_vel = torch.zeros((1024,3))
+                pred, pred_cov = network(feat, previous_vel)
+                previous_vel = pred.detach()
+                pred_vel = pred
+                targ_vel =torch.zeros_like(pred_vel)
+            else:
+                pred, pred_cov = network(feat)
+                pred_vel = pred
+                targ_vel =torch.zeros_like(pred_vel)
 
         targ = sample["targ_dt_World"][:,-1,:]
         
@@ -682,9 +696,12 @@ def net_test(args):
         "cuda" if torch.cuda.is_available() and not args.cpu else "cpu"
     )
     checkpoint = torch.load(args.model_path, map_location=device)
-    network = get_model(args.arch, net_config, args.input_dim, args.output_dim).to(
+    close_loop = eval(args.close_loop)
+    network = get_model(args.arch, net_config, args.input_dim, args.output_dim, close_loop).to(
         device
-    )
+    ) 
+    # vn_resnet {'in_dim': 7} 9 3
+    # print(checkpoint["model_state_dict"])
     network.load_state_dict(checkpoint["model_state_dict"])
     network.eval()
     logging.info(f"Model {args.model_path} loaded to device {device}.")
@@ -722,14 +739,17 @@ def net_test(args):
         # body_frame_3regress = False
         # body_frame = False
         
-        use_pred_vel = eval(args.body_frame)
         if "3res" in args.model_path:
+        # if "res_3res" in args.model_path:
             print("we regress 2 value!!")
             body_frame_3regress = False
+        elif "/res" in args.out_dir or "resnet" in args.out_dir or "/eq_" in args.out_dir or "/vn_" in args.out_dir or "ln_" in args.out_dir:
+            body_frame_3regress = False
         else:
-            body_frame_3regress = eval(args.body_frame)
+            body_frame_3regress = True
         # body_frame_3regress = False
         body_frame = eval(args.body_frame)
+        use_pred_vel = eval(args.body_frame)
         # Obtain trajectory
         start_t = time.time()
         
@@ -738,7 +758,7 @@ def net_test(args):
         # test_transforms = seq_dataset.get_test_transforms_bodyframe() 
         # ##UNCOMMENT IF WANT TO ADD BIAS IN TEST DATASET
         
-        net_attr_dict = get_inference(network, seq_loader, device, epoch=50, body_frame_3regress = body_frame_3regress, transforms = test_transforms)
+        net_attr_dict = get_inference(network, seq_loader, device, epoch=50, body_frame_3regress = body_frame_3regress, close_loop = close_loop, transforms = test_transforms)
         end_t = time.time()
         mem_used_max_GB = torch.cuda.max_memory_allocated() / (1024*1024*1024)
         torch.cuda.reset_peak_memory_stats()

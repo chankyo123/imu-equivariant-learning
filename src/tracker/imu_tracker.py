@@ -16,6 +16,7 @@ from utils.logging import logging
 from utils.math_utils import mat_exp
 from scipy.spatial.transform import Rotation
 import re
+import os
 
 class ImuTracker:
     """
@@ -37,6 +38,8 @@ class ImuTracker:
         body_frame = False,
         use_riekf = False,
         input_3 = False,
+        out_dir = None,
+        outdir = None,
     ):
 
         config_from_network = dotdict({})
@@ -148,8 +151,21 @@ class ImuTracker:
         self.json_path = json_path
         self.use_riekf = use_riekf
         self.input_3 = input_3
+        self.model_path = model_path
         print("self.update_freq : ", self.update_freq)
+        self.out_dir = out_dir
         
+        # store velocity output from network during filter
+        self.vel_outfile = os.path.join(outdir, "meas_vel.txt")
+        self.meas_vel = open(self.vel_outfile, "w")
+        self.vio_data = np.load(self.vio_path)
+        
+    def __del__(self):
+        try:
+            self.meas_vel.close()
+        except Exception as e:
+            logging.exception(e)
+            
     @jit(forceobj=True, parallel=False, cache=False)
     def _get_imu_samples_for_network(self, t_begin_us, t_oldest_state_us, t_end_us):
         # extract corresponding network input data
@@ -168,11 +184,86 @@ class ImuTracker:
         net_acc_w = net_acc
         # print(net_tus_begin, net_tus[:3]) #og TLIO에서 net_tus_end - net_tus[-1] = 1000 딱 떨어짐, 그리고 5000씩 딱딱 맞춰 증가, 200hz 이아헹선 아예 같음
         # print("is running here?2")
-        if not self.body_frame:
+        if self.body_frame:
+            if "last_align" in self.model_path:
+                
+                # ####1. use R from raw gyro data
+                Rs_bofbi = np.zeros((net_tus.shape[0], 3, 3))  # N x 3 x 3
+                Rs_bofbi[-1, :, :] = np.eye(3)
+                bg = self.filter.state.s_bg
+                for j in range(1, net_tus.shape[0]):
+                    dt_us = net_tus[-j] - net_tus[-j - 1]
+                    dR = mat_exp((net_gyr[-j, :].reshape((3, 1)) - bg) * dt_us * 1e-6)
+                    Rs_bofbi[-j - 1, :, :] = dR.dot(Rs_bofbi[-j, :, :])
+                
+                Rs_bofbi = Rs_bofbi.transpose(0,2,1)
+                ####1. use R from raw gyro data
+                
+                # ####2. use gt R from gt data
+                # Rs_bofbi = np.zeros((net_tus.shape[0], 3, 3))  # N x 3 x 3
+                # Rs_bofbi[-1, :, :] = np.eye(3)
+                # vio_data = np.load(self.vio_path)
+                # time = vio_data[:, 0]
+                # qxyzw_World_Device = vio_data[:, -10:-6]
+                # interp_funcs_quaternion = [interp1d(time, qxyzw_World_Device[:, i], fill_value="extrapolate") for i in range(qxyzw_World_Device.shape[1])]
+                # for j in range(1, net_tus.shape[0]):
+                #     quaternion_gt_j = np.array([interp_func(net_tus[-j]) for interp_func in interp_funcs_quaternion])
+                #     quaternion_gt_j /= np.linalg.norm(quaternion_gt_j)
+                #     quaternion_gt_j_1 = np.array([interp_func(net_tus[-j-1]) for interp_func in interp_funcs_quaternion])
+                #     quaternion_gt_j_1 /= np.linalg.norm(quaternion_gt_j_1)
+                #     R_gt_j = Rotation.from_quat(quaternion_gt_j).as_matrix()  # bd -> world / R_j-1^j = R_w^j @ (R_w^j-1).T
+                #     R_gt_j_1 = Rotation.from_quat(quaternion_gt_j_1).as_matrix()  # bd -> world / R_j-1^j = R_w^j @ (R_w^j-1).T
+                #     dR_gt = R_gt_j.T @ R_gt_j_1
+                #     #transpose
+                #     dR_gt = dR_gt.T
+                    
+                #     # bg = self.filter.state.s_bg
+                #     # dt_us = net_tus[-j] - net_tus[-j - 1]
+                #     # dR = mat_exp((net_gyr[-j, :].reshape((3, 1)) - bg) * dt_us * 1e-6)
+                #     # print(dR_gt, dR)
+                    
+                #     Rs_bofbi[-j - 1, :, :] = dR_gt.dot(Rs_bofbi[-j, :, :])
+                # Rs_bofbi = Rs_bofbi.transpose(0,2,1)
+                # ####2. use gt R from gt data
             
+                # print(Rs_bofbi[-1])
+                # print(Rs_bofbi[-200])
+                # assert False
+                
+                net_acc_w = np.einsum("tij,tj->ti", Rs_bofbi, net_acc)  # N x 3
+                
+            
+        else:
             # get data from filter
-            R_oldest_state_wfb, _ = self.filter.get_past_state(t_oldest_state_us)  # 3 x 3
-            # change the input of the network to be in local frame
+            R_oldest_state_wfb, _ = self.filter.get_past_state(t_oldest_state_us)  #   3 x 3  #using ekf
+            
+            # # R_oldest_state_wfb, _ = self.filter.get_past_state(t_oldest_state_us+50000)  # 3 x 3    #using riekf
+            # vio_data = np.load(s/elf.vio_path)
+            # time = vio_data[:, 0]
+            # qxyzw_World_Device = vio_data[:, -10:-6]
+            # interp_funcs_quaternion = [interp1d(time, qxyzw_World_Device[:, i], fill_value="extrapolate") for i in range(qxyzw_World_Device.shape[1])]
+            # quaternion_gt = np.array([interp_func(t_oldest_state_us) for interp_func in interp_funcs_quaternion])
+            # quaternion_gt = quaternion_gt / np.linalg.norm(quaternion_gt)
+            # R_oldest_state_wfb = Rotation.from_quat(quaternion_gt).as_matrix()  # bd -> world # 3 x 3    #using riekf
+            
+            # net_acc_w = np.zeros_like(net_acc)
+            # net_gyr_w = np.zeros_like(net_gyr)
+            # q_interpolated = np.zeros((len(net_tus), 4))
+
+            # for i, t in enumerate(net_tus):
+            #     closest_idx = np.argmin(np.abs(time - t))
+            #     q_interpolated[i] = qxyzw_World_Device[closest_idx]
+
+            # # Apply the rotation to each IMU data point
+            # for i in range(len(net_acc)):
+            #     q = q_interpolated[i]
+            #     rot_matrix = Rotation.from_quat(q).as_matrix()
+                
+            #     # Rotate the acceleration and gyroscope data
+            #     net_acc_w[i] = rot_matrix @ net_acc[i]
+            #     net_gyr_w[i] = rot_matrix @ net_gyr[i]
+            
+            ### change the input of the network to be in local frame
             ri_z = compute_euler_from_matrix(R_oldest_state_wfb, "xyz", extrinsic=True)[
                 0, 2
             ]
@@ -216,9 +307,12 @@ class ImuTracker:
             # init_ba = self.icalib.accelBias
             # init_bg = self.icalib.gyroBias
             # # calibrate raw imu data
+            
             # acc_biascpst, gyr_biascpst = self.icalib.calibrate_raw(
             #     acc_raw, gyr_raw
             # )  # removed offline bias and scaled
+            # # acc_biascpst, gyr_biascpst = acc_raw, gyr_raw
+            
             init_ba = np.zeros((3, 1))
             init_bg = np.zeros((3, 1))
             acc_biascpst, gyr_biascpst = acc_raw, gyr_raw
@@ -291,19 +385,21 @@ class ImuTracker:
 
         # Eventually calibrate
         if self.icalib:
-            # calibrate raw imu data with offline calibation
-            # this is used for network feeding
+            # # calibrate raw imu data with offline calibation
+            # # this is used for network feeding
             # acc_biascpst, gyr_biascpst = self.icalib.calibrate_raw(
             #     acc_raw, gyr_raw
             # )  # removed offline bias and scaled
 
-            # # calibrate raw imu data with offline calibation scale
-            # # this is used for the filter. By not applying offline bias
-            # # we expect the filter to estimate bias similar to the offline
+            # # # calibrate raw imu data with offline calibation scale
+            # # # this is used for the filter. By not applying offline bias
+            # # # we expect the filter to estimate bias similar to the offline
+            
             # # calibrated one
             # acc_raw, gyr_raw = self.icalib.scale_raw(
             #     acc_raw, gyr_raw
             # )  # only offline scaled - into the filter
+            
             acc_biascpst = acc_raw
             gyr_biascpst = gyr_raw
         else:
@@ -318,7 +414,7 @@ class ImuTracker:
         do_augmentation_and_update = t_us >= self.next_aug_t_us
         # print(t_us, self.next_interp_t_us, self.next_aug_t_us)
 
-        # # if augmenting the state, check that we compute interpolated measurement also
+        # if augmenting the state, check that we compute interpolated measurement also
         # assert (
         #     do_augmentation_and_update and do_interpolation_of_imu
         # ) or not do_augmentation_and_update, (
@@ -329,6 +425,45 @@ class ImuTracker:
         # propagate at IMU input rate, augmentation propagation depends on t_augmentation_us
         t_augmentation_us = self.next_aug_t_us if do_augmentation_and_update else None
 
+        ######### if using gravity compensated body acceleration ###
+        if "local_bodyframe_uf20" in self.out_dir:
+            # print("compensated!")
+            vio_data = self.vio_data
+            # print(t_us, vio_data[-1,0])
+            if t_us < vio_data[0,0] or t_us > vio_data[-1,0]:
+                return
+            g_world = np.array([0, 0, 9.81]).reshape(-1,1)
+            
+            # # print(self.out_dir)
+            # time_gt = vio_data[:, 0]
+            # qxyzw_World_Device = vio_data[:, -10:-6]
+            # # interp_funcs_quaternion = [interp1d(time_gt, qxyzw_World_Device[:, i], fill_value="extrapolate") for i in range(qxyzw_World_Device.shape[1])]
+            # # interp_funcs_quaternion = [interp1d(time_gt, qxyzw_World_Device[:, i], fill_value=(qxyzw_World_Device[0, i], qxyzw_World_Device[-1, i]), bounds_error=False) for i in range(qxyzw_World_Device.shape[1])]
+            # interp_funcs_quaternion = [interp1d(time_gt, qxyzw_World_Device[:, i]) for i in range(qxyzw_World_Device.shape[1])]
+
+            # quaternion_gt = np.array([interp_func(t_us) for interp_func in interp_funcs_quaternion])
+            # quaternion_gt = quaternion_gt / np.linalg.norm(quaternion_gt)
+            # R_gt = Rotation.from_quat(quaternion_gt).as_matrix()  # world -> bd
+            # R_gt = R_gt.T
+            
+            # R_gt = R_gt.T
+            # print(R_gt.T)
+            # print(R_filter)
+            # acc_body = R_gt.T @ g_world
+            R_filter, _, _, _, _ = self.filter.get_evolving_state()
+            acc_body = R_filter.T @ g_world
+            
+            # ## apply calibration in gravity ##
+            # gyro_body = np.zeros((3,1))
+            # # print("acc_body : ", acc_body)
+            # acc_body, _ = self.imu_calib.calibrate_raw(acc_body, gyro_body)
+            # # print("acc_body_cal : ", acc_body)
+            # print("acc_biascpst : ", acc_biascpst)
+            acc_biascpst = acc_biascpst - acc_body
+            # ## apply calibration in gravity ##
+        ######### if using gravity compensated body acceleration ###
+        
+        
         # IMU interpolation and data saving for network (using compensated IMU)
         if do_interpolation_of_imu:
             self._add_interpolated_imu_to_buffer(acc_biascpst, gyr_biascpst, t_us)
@@ -352,6 +487,7 @@ class ImuTracker:
                 # acc_raw, gyr_raw, t_us, m_b2bprime
                 acc_raw, gyr_raw, t_augmentation_us, m_b2bprime
             )
+            # print("propagate_riekf working!")
             
         # filter update
         did_update = False
@@ -364,12 +500,13 @@ class ImuTracker:
                 self.next_aug_t_us += self.dt_update_us
         else:
             if do_augmentation_and_update:
+                # print("--- t_us when update : ", t_us)
                 did_update = self._process_update_riekf(t_us, progress)   
                 # print("update working!")
                 # print(t_us, self.next_aug_t_us)
                 
-                # self.next_aug_t_us += self.dt_update_us
-                self.next_aug_t_us += self.dt_interp_us  #이걸로 항상 고정
+                self.next_aug_t_us += self.dt_update_us
+                # self.next_aug_t_us += self.dt_interp_us  #이걸로 항상 고정
 
         # set last value memory to the current one
         self.last_t_us = t_us
@@ -389,6 +526,7 @@ class ImuTracker:
         
         # t_end_us = t_us
         t_end_us = self.filter.state.si_timestamps_us[-1]  # always the last state
+        # print("--- t_us at update : ", t_end_us)
         
         window_time = int(self.net_input_size/200*1e6)
         t_begin_us = t_end_us - window_time
@@ -534,17 +672,25 @@ class ImuTracker:
             
             time = vio_data[:, 0]
             velocity = vio_data[:, -3:]
+            qxyzw_World_Device = vio_data[:, -10:-6]
             interp_funcs = [interp1d(time, velocity[:, i], fill_value="extrapolate") for i in range(velocity.shape[1])]
+            
+            interp_funcs_quaternion = [interp1d(time, qxyzw_World_Device[:, i], fill_value="extrapolate") for i in range(qxyzw_World_Device.shape[1])]
+            quaternion_gt = np.array([interp_func(t_end_us) for interp_func in interp_funcs_quaternion])
+            quaternion_gt = quaternion_gt / np.linalg.norm(quaternion_gt)
+            R_gt = Rotation.from_quat(quaternion_gt).as_matrix()  # bd -> world
             meas_gt = np.array([interp_func(t_end_us) for interp_func in interp_funcs]).reshape(3,-1)
             
             meas = meas_gt
-            meas_cov = meas_gt
+            meas_cov = np.eye(3)
+
             # if ts_data.size < 3 or v_data.shape[0] < self.update_freq:
-            if ts_data.size < 3 or v_data.shape[0] < self.net_input_size:
+            # if ts_data.size < 3 or v_data.shape[0] < self.net_input_size:
+            if ts_data.size < 3 or v_data.shape[0] < self.net_input_size and self.input_3:
                 # print(ts_data.size, v_data.shape[0])
                 # print("using gt")
                 meas = np.array([interp_func(t_end_us) for interp_func in interp_funcs]).reshape(3,-1)
-                meas_cov = meas
+                meas_cov = np.eye(3)
             else:
                 net_vel_body = np.empty((0, 3))
                 num_data = net_gyr_w.shape[0]
@@ -556,71 +702,96 @@ class ImuTracker:
                 #     v_at_timestamp_bd = v_at_timestamp
                 #     net_vel_body = np.vstack((net_vel_body, v_at_timestamp_bd.reshape(3)))
                 if self.update_freq == 1000:
-                    step = 5
-                    indices = np.arange(-199, 1) * step + (v_data.shape[0] - 1)
-                    # print(v_data.shape[0])
-                    # print(indices)
-                    # assert False
-                    timestamps = t_begin_us + np.arange(num_data) * 5000
-                    assert np.all(ts_data[indices] <= t_end_us), "Timestamp data out of range"
-                    net_vel_body = v_data[indices, :]
-                    
-                    # print(net_vel_body.shape)
-                    t_data = ts_data[indices]
-                    # print(t_data[-10:])
-                    # assert False
-                elif self.update_freq == 200:
-                    step = 1
-                    indices = np.arange(-19, 1) * step + (v_data.shape[0] - 1)
-                    t_data = ts_data[indices]
-                    # print(v_data.shape[0])
-                    # print(indices)
-                    assert np.all(ts_data[indices] <= t_end_us), "Timestamp data out of range"
-                    ##1. use filter velocity
-                    net_vel_body = v_data[indices, :]
-                    # ##2. use gt velocity
-                    # net_vel_body = np.array([interp_func(t_data) for interp_func in interp_funcs]).T
-                    
-                    # print(net_vel_body.shape)
-                    # print(t_data[-10:], t_end_us)
-                    # assert False
-                elif self.update_freq == 20:
-                    step = 1
-                    indices = np.arange(-(self.net_input_size-1), 1) * step + (v_data.shape[0] - 1)
-                    t_data = ts_data[indices]
-                    # print(v_data.shape[0])
-                    # print(indices)
-                    assert np.all(ts_data[indices] <= t_end_us), "Timestamp data out of range"
-                    
-                    # ##1. use filter velocity
-                    # net_vel_body = v_data[indices, :]
-                    
-                    # ##2. use gt velocity
-                    # net_vel_body = np.array([interp_func(t_data) for interp_func in interp_funcs]).T
-                    
-                    ##3. combination of using measurement after gt
-                    if progress < 0.5 : 
-                        net_vel_body = np.array([interp_func(t_data) for interp_func in interp_funcs]).T
-                    else:
+                    if self.input_3:
+                        step = 5
+                        indices = np.arange(-199, 1) * step + (v_data.shape[0] - 1)
+                        # print(v_data.shape[0])
+                        # print(indices)
+                        # assert False
+                        timestamps = t_begin_us + np.arange(num_data) * 5000
+                        assert np.all(ts_data[indices] <= t_end_us), "Timestamp data out of range"
                         net_vel_body = v_data[indices, :]
-                    # print("progress : ", progress)
                         
-                    # print("2 : ", net_vel_body.shape)
-                    
-                    # print(net_vel_body.shape)
-                    # print(self.imu_buffer.net_t_us[-10:], t_end_us) #diff : 5000 
-                    # print(t_data[-10:], t_end_us)   #diff : 5000 
+                        # print(net_vel_body.shape)
+                        t_data = ts_data[indices]
+                        # print(t_data[-10:])
+                        # assert False
+                elif self.update_freq == 200:
+                    if self.input_3:
+                        step = 1
+                        indices = np.arange(-19, 1) * step + (v_data.shape[0] - 1)
+                        t_data = ts_data[indices]
+                        # print(v_data.shape[0])
+                        # print(indices)
+                        assert np.all(ts_data[indices] <= t_end_us), "Timestamp data out of range"
+                        ##1. use filter velocity
+                        net_vel_body = v_data[indices, :]
+                        # ##2. use gt velocity
+                        # net_vel_body = np.array([interp_func(t_data) for interp_func in interp_funcs]).T
+                        
+                        # print(net_vel_body.shape)
+                        # print(t_data[-10:], t_end_us)
+                        # assert False
+                elif self.update_freq == 20:
+                    if self.input_3:
+                        step = 1
+                        indices = np.arange(-(self.net_input_size-1), 1) * step + (v_data.shape[0] - 1)
+                        t_data = ts_data[indices]
+                        # print(v_data.shape[0], v_data[indices, :].shape, t_data[:10])
+                        # print(indices)
+                        assert np.all(ts_data[indices] <= t_end_us), "Timestamp data out of range"
+                        
+                        # ##1. use filter velocity
+                        net_vel_body = v_data[indices, :]
+                        
+                        # # # ##2. use gt velocity
+                        # net_vel_body = np.array([interp_func(t_data) for interp_func in interp_funcs]).T
+                        # net_vel_body_gt = np.array([interp_func(t_data) for interp_func in interp_funcs]).T
+                        
+                        # # # ##3. use gt_z velocity
+                        # net_vel_body = v_data[indices, :]
+                        # net_vel_body[:,-1] = net_vel_body_gt[:,-1]
+                        # print(net_vel_body[:3] - net_vel_body_gt[:3], net_vel_body_gt[:3])
+                        
+                        # ##4. combination of using measurement after gt
+                        # if progress < 0.5 : 
+                        #     net_vel_body = np.array([interp_func(t_data) for interp_func in interp_funcs]).T
+                        # else:
+                        #     net_vel_body = v_data[indices, :]
+                        # # print("progress : ", progress)
+                            
+                        # print("2 : ", net_vel_body.shape)
+                        
+                        # print(net_vel_body.shape)
+                        # print(self.imu_buffer.net_t_us[-10:], t_end_us) #diff : 5000 
+                        # print(t_data[-10:], t_end_us)   #diff : 5000 
                 
-                net_ori_b2w = None
-                input_4 = False
-                meas, meas_cov = self.meas_source.get_displacement_measurement(
-                    net_gyr_w, net_acc_w, net_vel_body, net_ori_b2w, self.input_3, input_4
-                )
+                if "gtv" not in self.out_dir:
+                    ## comment out to put meas = meas_gt ###
+                    net_ori_b2w = None
+                    input_4 = False
+                    meas, meas_cov = self.meas_source.get_displacement_measurement(
+                        net_gyr_w, net_acc_w, net_vel_body, net_ori_b2w, self.input_3, input_4
+                    )
+                    if "collect_v_from_gt" in self.out_dir:
+                        vel_data = np.vstack((t_end_us, meas_gt)).T
+                        meas = meas_gt
+                    else:
+                        vel_data = np.vstack((t_end_us, meas)).T
+                    np.savetxt(self.meas_vel, vel_data, delimiter=",")
+                        
+                    
+                    ## comment out to put meas = meas_gt ###
+
                 # print(meas.reshape(-1)-meas_gt.reshape(-1))
             # print(t_end_us, ts_data)
             # print(meas.reshape(-1)-meas_gt.reshape(-1), meas_gt.reshape(-1))
             # print(interpolated_velocity.reshape(3,-1) - meas)
-            
+        
+        if not self.body_frame:
+            #when using world velocity measurement(estimation)
+            meas = R_gt.T @ meas #world to body
+        
         #for equiv-cov
         # meas_cov = R_data[-1] @ meas_cov @ R_data[-1].T
         # filter update
@@ -709,9 +880,9 @@ class ImuTracker:
         if self.update_freq == 20:
             # self.next_interp_t_us += int(self.dt_interp_us/5)
             self.next_interp_t_us += self.dt_interp_us
-        # elif self.update_freq == 1000:
-        #     self.next_interp_t_us += int(self.dt_interp_us/5)
+        elif self.update_freq == 1000:
+            self.next_interp_t_us += int(self.dt_interp_us/5)
         else:
-            self.next_interp_t_us += self.dt_update_us
+            self.next_interp_t_us += self.dt_interp_us
             
             

@@ -111,6 +111,7 @@ class ImuTrackerRunner:
         print("extracted_substring : ", extracted_string)
         json_path = os.path.join(args.root_dir, extracted_string + "/imu0_resampled_description.json")
         print("json_path : ", json_path, " / body_frame : ", args.body_frame, "use_const_cov of TLIO : ", args.use_const_cov)
+        self.vio_path = vio_path
         
         # ImuTracker object
         self.tracker = ImuTracker(
@@ -125,6 +126,8 @@ class ImuTrackerRunner:
             body_frame = eval(args.body_frame),
             use_riekf = eval(args.use_riekf),
             input_3 = eval(args.input_3),
+            out_dir = args.out_dir,
+            outdir = outdir,
         )
 
         # output
@@ -212,6 +215,25 @@ class ImuTrackerRunner:
             # obtain next raw IMU measurement from data loader
             ts, acc_raw, gyr_raw = self.input.get_datai(i)
             t_us = int(ts * 1e6)
+            vio_data = np.load(self.vio_path)
+            # if "comp" in self.outfile :
+            #     use_gravity_comp_csv = True
+            # else:
+            #     use_gravity_comp_csv = False
+            
+            # if use_gravity_comp_csv:
+            #     time_gt = vio_data[:, 0]
+            #     qxyzw_World_Device = vio_data[:, -10:-6]
+            #     # interp_funcs_quaternion = [interp1d(time_gt, qxyzw_World_Device[:, i], fill_value="extrapolate") for i in range(qxyzw_World_Device.shape[1])]
+            #     interp_funcs_quaternion = [interp1d(time_gt, qxyzw_World_Device[:, i], fill_value=(qxyzw_World_Device[0, i], qxyzw_World_Device[-1, i]), bounds_error=False) for i in range(qxyzw_World_Device.shape[1])]
+            #     # interp_funcs_quaternion = [interp1d(time_gt, qxyzw_World_Device[:, i], bounds_error=False) for i in range(qxyzw_World_Device.shape[1])]
+
+            #     quaternion_gt = np.array([interp_func(t_us) for interp_func in interp_funcs_quaternion])
+            #     quaternion_gt = quaternion_gt / np.linalg.norm(quaternion_gt)
+            #     R_gt = Rotation.from_quat(quaternion_gt).as_matrix()  # bd -> world
+            #     g_world = np.array([0, 0, 9.81]).reshape(-1,1)
+            #     R_gt = R_gt.T
+            #     acc_raw = acc_raw - R_gt.T @ g_world
             # cheat a bit with filter state in case for debugging
             if args.debug_using_vio_ba:
                 vio_ba = interp1d(self.input.vio_calib_ts, self.input.vio_ba, axis=0)(
@@ -285,11 +307,16 @@ class ImuTrackerRunner:
 
         self.f_state.close()
         self.f_debug.close()
+        self.tracker.meas_vel.close()
         if args.save_as_npy:
             # actually convert the .txt to npy to be more storage friendly
             states = np.loadtxt(self.outfile, delimiter=",")
             np.save(self.outfile + ".npy", states)
             os.remove(self.outfile)
+            
+            vel_states = np.loadtxt(self.tracker.vel_outfile, delimiter=",")
+            np.save(self.tracker.vel_outfile + ".npy", vel_states)
+            os.remove(self.tracker.vel_outfile)
 
     def scale_raw_dynamic(self, t, acc, gyr):
         """ This scale with gt data, for debug purpose only"""

@@ -53,6 +53,10 @@ class SequencesDataset:
         self.load_list()
         if self.verbose:
             self.log_dataset_info()
+            
+        self.inferred_velocities = None  # To save the inferred velocities
+        self.inferred_times = None  # To save the inferred timestep
+        self.inferred_vel = None
         
     def get_base_sensor_name(self):
         return self.sensor_file_basenames[0]
@@ -236,10 +240,87 @@ class SequencesDataset:
                     if "bodyframe" in self.data_path or "worldframe" not in self.data_path:
                         input_3 = False
                         # input_3 = True
+                        use_vel_world = False
+                        # use_vel_world = True
+                        
                         # print("input_3 : ", input_3)
                         if input_3:
-                            feat_vel_body = data_chunk[:, -3:]
-                            feat = np.concatenate((feat, feat_vel_body), axis=1)
+                            if use_vel_world: 
+                                feat_vel_body = data_chunk[:, -3:]
+                                rot = data_chunk[:,-10:-6]
+                                rot_matrices = Rotation.from_quat(rot).as_matrix()
+                                feat_vel_world = np.einsum('ijk,ik->ij', rot_matrices, feat_vel_body)
+                                feat = np.concatenate((feat, feat_vel_world), axis=1)
+                            else:
+                                ###1. use gt V from npy
+                                feat_vel_body = data_chunk[:, -3:]
+                                feat = np.concatenate((feat, feat_vel_body), axis=1)
+                                ###1. use gt V from npy
+                                
+                                # ###2. use V from filter (closed-loop)
+                                # with torch.no_grad():
+                                #     decimator = 10
+                                #     use_one_vel_body = False
+                                #     # print(row)
+                                #     if row//decimator == 0:
+                                #         # print(row//decimator)
+                                #         if use_one_vel_body:
+                                #             feat_vel_body = data_chunk[0, -3:]
+                                #             feat_vel_body = np.tile(feat_vel_body, (200, 1))  
+                                #         else:
+                                #             feat_vel_body = data_chunk[:, -3:]
+                                            
+                                #         self.inferred_times = ts_us  # [200, 1]
+                                #         self.inferred_velocities = data_chunk[:, -3:]  # [200, 3]
+                                #         feat = np.concatenate((feat, feat_vel_body), axis=1)
+                                #         feat_infer = to_device(torch.from_numpy(feat.T), self.device).unsqueeze(0).to(torch.float32) 
+                                #         inferred_vel, _ = self.network(feat_infer)
+                                #         self.inferred_vel = inferred_vel.detach().cpu().numpy()
+                                #         # print(self.inferred_vel)
+                                #     # print(row//10 == 0)
+                                #     # print(ts_us[0])
+                                #     # print(ts_us[-1] - ts_us[-2])
+                                #     # print((ts_us[-1] - ts_us[0])/199)
+                                #     else:
+                                #         # feat_infer = to_device(torch.from_numpy(feat.T), self.device).unsqueeze(0).to(torch.float32) 
+                                #         # inferred_vel, _ = self.network(feat_infer)
+                                #         # print(ts_us[-1])
+                                #         new_times = ts_us  
+                                #         new_vels = data_chunk[:, -3:]  
+                                        
+                                #         last_inferred_time = self.inferred_times[-1] if self.inferred_times is not None else float('-inf')
+                                #         mask = new_times > last_inferred_time  # True for times exceeding the last inferred time
+
+                                #         filtered_new_times = new_times[mask]
+                                #         filtered_new_vels = new_vels[mask.squeeze()]
+
+                                #         if filtered_new_times.size > 0:
+                                #             if self.inferred_times is None:
+                                #                 self.inferred_times = np.expand_dims(filtered_new_times, axis=0)  # Start with the first time
+                                #             else:
+                                #                 self.inferred_times = np.concatenate((self.inferred_times, np.expand_dims(filtered_new_times, axis=1)), axis=0)
+                                #             # print(self.inferred_velocities.shape, filtered_new_vels.shape)
+                                #             # print(self.inferred_vel)
+                                #             self.inferred_velocities = np.concatenate((self.inferred_velocities, filtered_new_vels), axis=0)
+                                #             # print(self.inferred_velocities.shape)
+                                #             if self.inferred_velocities.shape[0] > 300:
+                                #                 self.inferred_velocities = self.inferred_velocities[-300:]
+                                #                 self.inferred_times = self.inferred_times[-300:]
+                                #             last_ts = ts_us[-1]
+                                #             matching_index = np.where(self.inferred_times == last_ts)[0]
+                                #             # if matching_index is not None:
+                                #             #     print(matching_index)
+                                #             self.inferred_velocities[matching_index] = self.inferred_vel
+                                            
+                                #             feat_vel_body = self.inferred_velocities[-200:, :]
+                                            
+                                            
+                                #             feat = np.concatenate((feat, feat_vel_body), axis=1)
+                                #             feat_infer = to_device(torch.from_numpy(feat.T), self.device).unsqueeze(0).to(torch.float32) 
+                                #             inferred_vel, _ = self.network(feat_infer)
+                                #             self.inferred_vel = inferred_vel.detach().cpu().numpy()
+                                # ###2. use V from filter (closed-loop)
+                                
                             # input_4 = True
                             input_4 = False
                             if input_4:
@@ -279,7 +360,7 @@ class SequencesDataset:
         return feats, gt_data
 
     def data_chunk_from_seq_data(self, seq_data, seq_desc, row):
-        if "bodyframe" in self.data_path or "worldframe" not in self.data_path:
+        if "bodyframe" in self.data_path:
             body_frame = True
             body_frame_velocity = True
         else:
@@ -294,6 +375,7 @@ class SequencesDataset:
             feats = self.normalize_feats(feats)
         
         ts_us, rot, pos, vel = gt_data
+        # print(ts_us[0])
         targ_dR_World, targ_dt_World = self.poses_to_target(rot, pos)
 
         R_world_gla = np.eye(3)
@@ -332,7 +414,44 @@ class SequencesDataset:
                 targ_dt_World = np.matmul(R_W.transpose(0, 2, 1), targ_dt_World_reshaped)
                 targ_dt_World = targ_dt_World.reshape(-1, 3)
                 # print('check targdt and vel : ', targ_dt_World[0,:] - vel[0,:])
+        
+            align_last_imu = True
+            # align_last_imu = False
+            align_first_imu = False
+            
+            if align_last_imu and align_first_imu:
+                assert False
+            if align_last_imu:
+            ## 1. align in last IMU frame ##   
+                R_W_last = Rotation.from_quat(rot[-1:]).as_matrix().transpose(0, 2, 1)
+                R_W_last = np.squeeze(R_W_last, axis = 0)
+                R_n_W = Rotation.from_quat(rot).as_matrix()
                 
+                R_n_last = np.einsum('ij,tjk->tik', R_W_last, R_n_W)  # Resulting shape: (200, 3, 3)
+            if align_first_imu:
+            ## 2. align in first IMU frame ##   
+                R_W_first = Rotation.from_quat(rot[0:1]).as_matrix().transpose(0, 2, 1)
+                R_W_first = np.squeeze(R_W_first, axis = 0)
+                R_n_W = Rotation.from_quat(rot).as_matrix()
+                
+                R_n_first = np.einsum('ij,tjk->tik', R_W_first, R_n_W)  # Resulting shape: (200, 3, 3)
+            
+            # Only IMU and mag data need to be rotated (not barometer)
+            for k, v in feats.items():
+                if "imu" in k:
+                    # assert feats[k].shape[0] == 6
+                    # feats[k][:3] = np.einsum("ji,jt->it", R_world_gla, feats[k][:3])
+                    #only align acceleration
+                    # print(feats[k][3:].shape) #3*200
+                    if align_last_imu:
+                        feats[k][3:6] = np.einsum("tij,jt->it", R_n_last, feats[k][3:6])
+                        if feats[k].shape[0] == 9:
+                            feats[k][6:9] = np.einsum("tij,jt->it", R_n_last, feats[k][6:9])
+                    if align_first_imu:
+                        feats[k][3:] = np.einsum("tij,jt->it", R_n_first, feats[k][3:])
+                        
+                        
+                        
         
         # We may return multiple windows, so place them all in here for convenience.
         if body_frame : 

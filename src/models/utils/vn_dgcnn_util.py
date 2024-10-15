@@ -135,9 +135,14 @@ def get_vector_feature(x):
     x_acc = x[:,:3,:].transpose(2,1).contiguous() 
     x_ang = x[:,3:6,:].transpose(2,1).contiguous() 
     # if div == 9:
-    if num_dims == 9 :
+    # print(num_dims.item())
+    if isinstance(num_dims, torch.Tensor):
+        dims = num_dims.item()
+    else:
+        dims = num_dims
+    if dims == 9 :
         x_vel_body = x[:,6:9,:].transpose(2,1).contiguous() 
-    elif num_dims == 18 :
+    elif dims == 18 :
         x_vel_body = x[:,6:9,:].transpose(2,1).contiguous() 
         x_ori_3column = x[:,9:18,:].transpose(2,1).contiguous() 
         
@@ -146,21 +151,21 @@ def get_vector_feature(x):
     x_acc = x_acc.view(batch_size, num_points, 1, 3)
     x_ang = x_ang.view(batch_size, num_points, 1, 3)
     # if div == 9:
-    if num_dims == 9 :
+    if dims == 9 :
         x_vel_body = x_vel_body.view(batch_size, num_points, 1, 3)
-    elif num_dims == 18 :
+    elif dims == 18 :
         x_vel_body = x_vel_body.view(batch_size, num_points, 1, 3)
         x_ori_3column = x_ori_3column.view(batch_size, num_points, 3, 3)
     # if div == 6 :
-    if num_dims == 6 :
+    if dims == 6 :
         feature = torch.cat((x_acc, x_ang), dim=2).contiguous()   
     # elif div == 9:
-    elif num_dims == 9 :
+    elif dims == 9 :
         # print("here")
         feature = torch.cat((x_acc, x_ang, x_vel_body), dim=2).contiguous()   
-    elif num_dims == 18 :
+    elif dims == 18 :
         feature = torch.cat((x_acc, x_ang, x_vel_body, x_ori_3column), dim=2).contiguous()   
     else:
         # assert div == 6 or div == 9
-        assert num_dims == 6 or num_dims == 9
+        assert dims == 6 or dims == 9
     return feature

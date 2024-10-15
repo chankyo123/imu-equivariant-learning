@@ -14,7 +14,15 @@ def delete_files_except(directory, exceptions):
 # directory_path = '/workspace/imu-equivariant-learning/batch_filter_outputs_uf10/resnet/'
 directory_path = '/workspace/imu-equivariant-learning/batch_filter_outputs_uf10/res_2res_nodrop/'
 directory_path = '/workspace/imu-equivariant-learning/batch_filter_outputs_idso2_uf10/idso2_resnet_2/'
-directory_path = '/workspace/imu-equivariant-learning/batch_filter_outputs_idso2_uf10/idso2_eq_2res_200hz_3input_mselss_0.5_pertb/'
+directory_path = '/workspace/imu-equivariant-learning/batch_filter_outputs_idso3_uf10/idso3_eq_2res_200hz_3input_mselss_0.5_pertb/'
+directory_path = '/workspace/imu-equivariant-learning/batch_filter_outputs_idso3_notfixed_uf10/notfixed_idso3_eq_2res_200hz_3input_mselss_0.5_pertb/'
+directory_path = '/workspace/imu-equivariant-learning/batch_filter_outputs_uf10/june_sim_resnet/'
+directory_path = '/workspace/imu-equivariant-learning/batch_filter_outputs_idso2_uf10/test_idso2_eq_2res_200hz_3input_mselss_0.5_pertb/'
+directory_path = '/workspace/imu-equivariant-learning/batch_filter_outputs_idso3_2_uf200/eq_2res_200hz_2input_mselss/'
+directory_path = '/workspace/imu-equivariant-learning/batch_filter_outputs_uf200/gtv_uf200/eq_2res_20hz_3input_samelss_nobias_ep200/'
+
+# directory_path = '/workspace/imu-equivariant-learning/batch_filter_outputs_sim_notjune_uf10/sim_eq_2res_200hz_3input_mselss/'
+
 # List of files to keep in each subdirectory
 files_to_keep = ['debug.txt', 'not_vio_state.txt.npy', 'metrics.json', 'parameters.json']
 

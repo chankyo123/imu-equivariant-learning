@@ -21,10 +21,12 @@ class State(object):
         self.si_Rs = []  # past states
         self.si_ps = []  # past states
         self.si_vs = []  # past states (velocity)
+        self.sn_vs = []  # past states (velocity) for network
         self.si_Rs_fej = []
         self.si_ps_fej = []
         self.si_vs_fej = [] 
         self.si_timestamps_us = []
+        self.sn_timestamps_us = []
         self.unobs_shift = None
         
         self.InEKF_StateType = "WorldCentric"
@@ -45,12 +47,14 @@ class State(object):
         self.si_Rs = []
         self.si_ps = []
         self.si_vs = []
+        self.sn_vs = []  # past states (velocity) for network
         self.si_Rs_fej = []
         self.si_ps_fej = []
         self.si_vs_fej = []
             
 
         self.si_timestamps_us = []
+        self.sn_timestamps_us = []
         self.unobs_shift = self.generate_unobservable_shift()
 
     def reset_state(self, Rs, ps, vs, R, v, p, ba_init, bg_init):
@@ -63,6 +67,7 @@ class State(object):
         self.si_Rs = Rs
         self.si_ps = ps
         self.si_vs = vs
+        self.sn_vs = vs.copy()
         self.si_Rs_fej = Rs
         self.si_ps_fej = ps
         self.si_vs_fej = vs
@@ -195,7 +200,8 @@ class ImuMSCKF:
             )
 
         # constants
-        g_norm = getattr(config, "g_norm", 9.81)
+        # g_norm = getattr(config, "g_norm", 9.81)
+        g_norm = getattr(config, "g_norm", 9.8067)
         self.g = np.array([0, 0, -g_norm]).reshape((3, 1))
 
         # parameters
@@ -222,10 +228,10 @@ class ImuMSCKF:
 
         # debug config
         self.use_const_cov = getattr(config, "use_const_cov", False)
-        if self.use_const_cov:
-            self.const_cov_val_x = config.const_cov_val_x
-            self.const_cov_val_y = config.const_cov_val_y
-            self.const_cov_val_z = config.const_cov_val_z
+        # if self.use_const_cov:
+        self.const_cov_val_x = config.const_cov_val_x
+        self.const_cov_val_y = config.const_cov_val_y
+        self.const_cov_val_z = config.const_cov_val_z
 
         self.add_sim_meas_noise = getattr(config, "add_sim_meas_noise", False)
         if self.add_sim_meas_noise:
@@ -339,9 +345,10 @@ class ImuMSCKF:
 
     def get_past_state(self, t_us):
         assert isinstance(t_us, int)
+        p = None
         state_idx = self.state.si_timestamps_us.index(t_us)
         R = self.state.si_Rs[state_idx]
-        p = self.state.si_ps[state_idx]
+        # p = self.state.si_ps[state_idx]
 
         return R, p
 
@@ -515,12 +522,12 @@ class ImuMSCKF:
         
         
         # N = 0.1*np.eye(3) #so3 3으로 해보다가 1로 바꿈
-        N = 1*np.eye(3) #used when using gtv
+        # N = 1*np.eye(3) #used when using gtv
         # N = 5*np.eye(3)
         # N = 0.1*np.eye(3)
         # N = 0.01*np.eye(3)
         
-        # N = self.meascov_scale * meas_cov
+        N = self.meascov_scale * meas_cov
         # print('N!!')
         # N = 0.001*np.eye(3)
         
@@ -529,8 +536,11 @@ class ImuMSCKF:
             val_y = self.const_cov_val_y
             val_z = self.const_cov_val_z
             N = self.meascov_scale * np.diag(np.array([val_x, val_y, val_z]))
-            print('N value : ', np.array([val_x, val_y, val_z]))  #set to be -> N value :  [0.01 0.01 0.01]
-        
+            # print('N value : ', np.array([val_x, val_y, val_z]))  #set to be -> N value :  [0.01 0.01 0.01]
+        else:
+            None
+            # print('N value : ', N)  #set to be -> N value :  [0.01 0.01 0.01]
+             
         # symmetrize N
         N = 0.5 * (N + N.T)
         N[N < 1e-10] = 0
@@ -538,6 +548,7 @@ class ImuMSCKF:
         H = np.zeros((3, dimP))
         H[0:3,3:6] = np.eye(3) # I
         
+        # mahalanobis_factor = 1
         mahalanobis_factor = 0
         if mahalanobis_factor > 0:
             # Mahalanobis gating test
@@ -551,17 +562,33 @@ class ImuMSCKF:
             normalized_square_error = np.linalg.multi_dot(
                 [Z_tmp.T, Sinv_temp, Z_tmp]
             )
-            # maha_constant = 30
-            # maha_constant = 20
+            
             maha_constant = 1
-            # maha_constant = 300
-            # maha_constant = 1.4
-            test_failed = normalized_square_error > mahalanobis_factor * 11.345 * maha_constant  #cov2까지는 200을 곱했었음
+            # maha_constant = 0.8
+            # maha_constant = 0.7
+            # maha_constant = 0.75
+
+            # test_failed = normalized_square_error > mahalanobis_factor * 11.345 * maha_constant  #cov2까지는 200을 곱했었음
+            test_failed = np.any(np.sqrt(np.diag(S_temp)).reshape(3, 1) > 2.5)
+            # print(np.sqrt(np.diag(S_temp)).reshape(3,1))
+            
             # wait for convergence before failing
             if test_failed:
-                print("Mahalanobis test failed... xi2 =", normalized_square_error)
-                return
-            # break
+                # print("Mahalanobis test failed... xi2 =", normalized_square_error)
+                # print("Mahalanobis test failed... xi2 =", np.sqrt(np.diag(S_temp)).reshape(-1))
+                
+                # ##1. return
+                # return
+                # ##1. return
+
+                ###2. const R
+                val_x = self.const_cov_val_x
+                val_y = self.const_cov_val_y
+                val_z = self.const_cov_val_z
+                N = self.meascov_scale * np.diag(np.array([val_x, val_y, val_z]))
+                # N = self.meascov_scale * np.diag(np.array([val_x, val_y, val_z])) * 0.1
+                ###2. const R
+
                     
                     
         b = np.array([0, 0, 0, -1, 0]).reshape(-1,1)
@@ -599,6 +626,8 @@ class ImuMSCKF:
         # self.state.si_vs.append(self.state.s_R.T @ self.state.s_v)  #save body velocity
         # self.state.si_timestamps_us.append(t_end_us)
         # # self.state.si_vs.append(self.state.s_v)     #save world velocity
+        self.state.sn_timestamps_us.append(t_end_us)
+        self.state.sn_vs.append(self.state.s_R.T @ self.state.s_v)  #save body velocity
 
         # Update Covariance
         IKH = np.eye(dimP) - K @ H

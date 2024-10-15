@@ -25,7 +25,7 @@ def torch_to_numpy(torch_arr):
     return torch_arr.cpu().detach().numpy()
 
 
-def get_inference(network, data_loader, device, epoch, body_frame_3regress = False, body_frame = False, transforms=[]):
+def get_inference(network, data_loader, device, epoch, body_frame_3regress = False, body_frame = False, close_loop = False, transforms=[]):
     """
     Obtain attributes from a data loader given a network state
     Outputs all targets, predicts, predicted covariance params, and losses in numpy arrays
@@ -44,15 +44,23 @@ def get_inference(network, data_loader, device, epoch, body_frame_3regress = Fal
             pred, pred_cov, pred_vel = network(feat)
             # print(feat.shape, pred.shape, pred_cov.shape)
         else:
-            pred, pred_cov = network(feat)
-            pred_vel = pred
+            if close_loop:
+                if bid == 0:
+                    previous_vel = torch.zeros((1024,3))
+                pred, pred_cov = network(feat, previous_vel)
+                pred_vel = pred.clone()
+                previous_vel = pred.detach()
+            else:
+                pred, pred_cov = network(feat)
+                pred_vel = pred.clone()
+                previous_vel = None
         
         if len(pred.shape) == 2:
             targ = sample["targ_dt_World"][:,-1,:]
             if body_frame: 
                 # print("body frame is running in inference!!")
                 targ_vel = sample["vel_Body"][:,-1,:]
-                targ = targ_vel
+                targ = targ_vel.clone()
             else:
                 targ_vel = sample["vel_World"][:,-1,:]
         else:
@@ -94,7 +102,7 @@ def get_inference(network, data_loader, device, epoch, body_frame_3regress = Fal
     return attr_dict
 
 
-def do_train(network, train_loader, device, epoch, optimizer, input_dim, transforms=[], body_frame_3regress = False, body_frame = False):
+def do_train(network, train_loader, device, epoch, optimizer, input_dim, transforms=[], body_frame_3regress = False, body_frame = False, close_loop = False):
     """
     Train network for one epoch using a specified data loader
     Outputs all targets, predicts, predicted covariance params, and losses in numpy arrays
@@ -164,8 +172,16 @@ def do_train(network, train_loader, device, epoch, optimizer, input_dim, transfo
         if body_frame_3regress: 
             pred, pred_cov, pred_vel = network(feat)
         else:
-            pred, pred_cov= network(feat)
-            pred_vel = pred
+            if close_loop:
+                if bid == 0:
+                    previous_vel = torch.zeros((1024,3))
+                pred, pred_cov = network(feat, previous_vel)
+                pred_vel = pred.clone()
+                previous_vel = pred.detach()
+            else:
+                pred, pred_cov= network(feat)
+                pred_vel = pred.clone()
+                    
 
         # if body_frame_3regress: 
         #     pred_rot, pred_cov_rot, pred_vel_rot = network(feat_rot)
@@ -177,10 +193,14 @@ def do_train(network, train_loader, device, epoch, optimizer, input_dim, transfo
 
         if len(pred.shape) == 2:
             targ = sample["targ_dt_World"][:,-1,:]
+            targ_vel = sample["targ_dt_World"][:,-1,:]
             if body_frame:
                 # print("body frame is running in training!!")
-                targ_vel = sample["vel_Body"][:,-1,:]
-                targ = targ_vel
+                
+                estimate_world_disp = False
+                if not estimate_world_disp:
+                    targ_vel = sample["vel_Body"][:,-1,:]
+                    targ = sample["vel_Body"][:,-1,:]
             else:
                 targ_vel = sample["vel_World"][:,-1,:]
         else:
@@ -427,11 +447,14 @@ def net_train(args):
     # body_frame_3regress = False
     
     body_frame = eval(args.body_frame)
+    close_loop = eval(args.close_loop)
     if "3res" in args.out_dir:
         print("we regress 2 value!!")
         body_frame_3regress = False
+    elif "/res" in args.out_dir or "resnet" in args.out_dir or "eq_" in args.out_dir or "vn_" in args.out_dir or "ln_" in args.out_dir:
+        body_frame_3regress = False
     else:
-        body_frame_3regress = eval(args.body_frame)
+        body_frame_3regress = True
     if not body_frame: 
         train_transforms = data.get_train_transforms()
     else:
@@ -461,15 +484,18 @@ def net_train(args):
     device = torch.device(
         "cuda:0" if torch.cuda.is_available() and not args.cpu else "cpu"
     )
-    network = get_model(args.arch, net_config, args.input_dim, args.output_dim)
+    network = get_model(args.arch, net_config, args.input_dim, args.output_dim, close_loop)
     network.to(device)
     total_params = network.get_num_params()
     logging.info(f'Network "{args.arch}" loaded to device {device}')
     logging.info(f"Total number of parameters: {total_params}")
 
     optimizer = torch.optim.Adam(network.parameters(), args.lr)
+    # optimizer = torch.optim.AdamW(network.parameters(), lr=args.lr, weight_decay=5e-4)
+
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, factor=0.1, patience=10, verbose=True, eps=1e-12
+        # optimizer, factor=0.1, patience=10, verbose=True, eps=1e-12
+        optimizer, factor=0.1, patience=5, verbose=True, eps=1e-8
     )
     logging.info(f"Optimizer: {optimizer}, Scheduler: {scheduler}")
 
@@ -523,7 +549,7 @@ def net_train(args):
 
         logging.info(f"-------------- Training, Epoch {epoch} ---------------")
         start_t = time.time()
-        train_attr_dict = do_train(network, train_loader, device, epoch, optimizer, args.input_dim, train_transforms, body_frame_3regress, body_frame)
+        train_attr_dict = do_train(network, train_loader, device, epoch, optimizer, args.input_dim, train_transforms, body_frame_3regress, body_frame, close_loop)
         mem_used_max_GB = torch.cuda.max_memory_allocated() / (1024*1024*1024)
         torch.cuda.reset_peak_memory_stats()
         mem_str = f'GPU Mem: {mem_used_max_GB:.3f}GB'
@@ -540,7 +566,7 @@ def net_train(args):
         consumed_times.append(end_t - start_t)    
             
         if val_loader is not None:
-            val_attr_dict = get_inference(network, val_loader, device, epoch, body_frame_3regress, body_frame)
+            val_attr_dict = get_inference(network, val_loader, device, epoch, body_frame_3regress, body_frame, close_loop)
             write_summary(summary_writer, val_attr_dict, epoch, optimizer, "val")
             if np.mean(val_attr_dict["losses"]) < best_val_loss:
                 best_val_loss = np.mean(val_attr_dict["losses"])
@@ -548,7 +574,8 @@ def net_train(args):
         else:
             save_model(args, epoch, network, optimizer, best=False)
             
-        if epoch in {8,9,19,49, 80, 90, 95, 96, 98, 99, 109, 119, 129, 149, 159, 179, 189, 195, 199}:
+        if epoch in {8,9,19,29,39,49,59,69, 80, 90, 95, 96, 98, 99, 109, 119, 129, 149, 159, 179, 189, 195, 199, 290, 299, 390, 399}:
+            
             save_model(args, epoch, network, optimizer, best=False, interrupt=False)
     
     mean_epoch_time = np.mean(consumed_times)

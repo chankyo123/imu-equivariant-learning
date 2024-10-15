@@ -48,15 +48,14 @@ class VN_BasicBlock1D(nn.Module):
         super(VN_BasicBlock1D, self).__init__()
         # Both self.conv1 and self.downsample layers downsample the input when stride != 1
         
-        self.conv1 = conv3x1(in_planes, planes, stride)
-        # if stride == 1:
-        #     self.conv1 = nn.Linear(in_planes, planes, bias=False)
-        # elif stride == 2:
-        #     self.conv1 = nn.Linear(in_planes, planes, bias=False)
-        #     # self.conv1_pool = nn.AvgPool1d(kernel_size=3, stride=2, padding=1)
-        #     self.conv1_pool = local_mean_pool
-        # else:
-        #     assert False
+        # self.conv1 = conv3x1(in_planes, planes, stride)
+        if stride == 1:
+            self.conv1 = nn.Linear(in_planes, planes, bias=False)
+        elif stride == 2:
+            self.conv1 = nn.Linear(in_planes, planes, bias=False)
+            self.conv1_pool = VNMeanPool_local(2)
+        else:
+            assert False
             
         # self.bn1 = nn.BatchNorm1d(planes)
         self.bn1 = VNBatchNorm(planes, dim=3)
@@ -65,8 +64,8 @@ class VN_BasicBlock1D(nn.Module):
         self.relu = VNLeakyReLU(planes,negative_slope=0.0)
         
         # print("info of conv : ", planes, planes * self.expansion, stride)
-        self.conv2 = conv3x1(planes, planes * self.expansion)
-        # self.conv2 = nn.Linear(planes, planes * self.expansion, bias=False)
+        # self.conv2 = conv3x1(planes, planes * self.expansion)
+        self.conv2 = nn.Linear(planes, planes * self.expansion, bias=False)
         
         # self.bn2 = nn.BatchNorm1d(planes * self.expansion)
         self.bn2 = VNBatchNorm(planes * self.expansion, dim=3)
@@ -78,49 +77,29 @@ class VN_BasicBlock1D(nn.Module):
         # x = x.unsqueeze(1) #[1024, 64, 50]
         identity = x
 
-        # if self.stride == 1:
-        #     x = torch.permute(x,(0,2,1,3))
-        #     x = x.reshape(-1, x.size(2), x.size(3))
-        #     out = self.conv1(x)
+        if self.stride == 1:
+            out = self.conv1(torch.transpose(x,1,-1))
+            out = out.transpose(1,-1)
+        elif self.stride == 2:
+            out = self.conv1(torch.transpose(x,1,-1))
+            out = out.transpose(1,-1)
+            out = self.conv1_pool(out)
             
-        #     # out = self.conv1(torch.transpose(x,1,-1))
-        #     # out = out.transpose(1,-1)
-        # elif self.stride == 2:
-        #     # out = self.conv1(x.transpose(1,-1))
-        #     out = self.conv1(torch.transpose(x,1,-1))
-        #     out = out.transpose(1,-1)
-        #     out = self.conv1_pool(out)
-            
-        # else:
-        #     assert False
-        
-        x = torch.permute(x,(0,2,1,3))
-        x = x.reshape(-1, x.size(2), x.size(3))
-        out = self.conv1(x)
-        out = out.reshape(-1, 3, out.size(1), out.size(2))
-        out = torch.permute(out,(0,2,1,3))
+        else:
+            assert False
 
         out = self.bn1(out)
         out = self.relu(out)
 
-        out = torch.permute(out,(0,2,1,3))
-        out = out.reshape(-1, out.size(2), out.size(3))
-        out = self.conv2(out)
-        out = out.reshape(-1, 3, out.size(1), out.size(2))
-        out = torch.permute(out,(0,2,1,3))
-        
-        # print('shape of input x, size check for downsample: ', x.shape)          #[1024, 10, 6, 50]
-        # print('shape of x after conv2, size check for downsample: ', out.shape)  #[1024, 21, 6, 25]
+        out = self.conv2(torch.transpose(out,1,-1))
+        out = out.transpose(1,-1)
         
         out = self.bn2(out)
 
         if self.downsample is not None:
-            identity = self.downsample[0](x)
-            identity = identity.reshape(-1, 3, identity.size(1), identity.size(2))
-            identity = torch.permute(identity,(0,2,1,3))
-
+            identity = self.downsample[0][0](x.transpose(1,-1))
+            identity = self.downsample[0][1](identity.transpose(1,-1))
             identity = self.downsample[1](identity)
-
         out += identity
         out = self.relu(out)
 
@@ -200,9 +179,13 @@ class FcBlock(nn.Module):
         )
         self.bn1 = VNBatchNorm(self.prep_channel, dim=3)
         # fc layers
+        ## TODO: check if linear contain bias
         self.fc1 = nn.Linear(self.prep_channel * self.in_dim, self.fc_dim, bias = False)
         self.fc2 = nn.Linear(self.fc_dim, self.fc_dim, bias = False)
         self.fc3 = nn.Linear(self.fc_dim, self.out_channel, bias = False)
+        # self.fc1 = nn.Linear(self.prep_channel * self.in_dim, self.fc_dim)
+        # self.fc2 = nn.Linear(self.fc_dim, self.fc_dim)
+        # self.fc3 = nn.Linear(self.fc_dim, self.out_channel)
         self.relu = VNLeakyReLU(self.fc_dim,negative_slope=0.0)
         self.dropout = nn.Dropout(0.5)
 
@@ -241,18 +224,27 @@ class FcBlock(nn.Module):
         x = self.relu(x)
         
         # x = self.dropout(x)   
-        # if self.fc1.bias is not None:
-        #     print("The fc1 layer has a bias term.")
-        # if self.fc2.bias is not None:
-        #     print("The fc2 layer has a bias term.")
-        # if self.fc3.bias is not None:
-        #     print("The fc3 layer has a bias term.")
         
         # x = self.fc3.to('cuda')(x)
         x = torch.permute(x,(0,2,1)) 
         x = self.fc3(x)
         x = torch.permute(x,(0,2,1)) 
         
+        # if self.fc1.bias is not None:
+        #     print("The fc1 layer has a bias term.")
+        # else:
+        #     print("The fc1 layer does not has a bias term.")
+            
+        # if self.fc2.bias is not None:
+        #     print("The fc2 layer has a bias term.")
+        # else:
+        #     print("The fc2 layer does not has a bias term.")
+        # if self.fc3.bias is not None:
+        #     print("The fc3 layer has a bias term.")
+        # else:
+        #     print("The fc3 layer does not has a bias term.")
+            
+            
         if self.out_channel == 1: #[n x 3]
             x = x.squeeze(dim=1)
 
@@ -315,19 +307,17 @@ class VN_ResNet1D(nn.Module):
         # 어떻게 feature size 변화되는지 확인하기 (encoding feature dimension check!)
         print(in_dim//div, 64//div)
         self.input_block_conv  = nn.Conv1d(in_dim//div, 64//div, kernel_size=7, stride=2, padding=3, bias=False)
-        # self.input_block_conv  = nn.Linear(in_dim, self.base_plane, bias=False)
+        # self.input_block_conv  = nn.Linear(in_dim//div, self.base_plane, bias=False)
         self.input_block_local_info  = nn.Conv1d(in_dim, in_dim, kernel_size=7, stride=2, padding=3, bias=False)
         # print('num of param of conv-input-block : ' , sum(p.numel() for p in self.input_block_conv.parameters()) )
         # print('num of param of linear-input-block : ' , sum(p.numel() for p in (nn.Linear(in_dim, self.base_plane, bias=False)).parameters() ) )
         # self.input_block_conv  = nn.Linear(in_dim, self.base_plane, bias=False)
-        self.pool = mean_pool
-        # self.local_pool = local_mean_pool
-        self.local_pool = nn.AvgPool1d(kernel_size=3, stride=2, padding=1)
-        self.input_block_conv_pool = nn.AvgPool1d(kernel_size=3, stride=2, padding=3)
-        
+
+        self.local_pool = VNMeanPool_local(2)
         self.input_block_bn = VNBatchNorm(self.base_plane, dim=4)
         self.input_block_relu = VNLeakyReLU(self.base_plane,negative_slope=0.0)
-        self.input_block_pool = nn.AvgPool1d(kernel_size=3, stride=2, padding=1)
+        self.input_block_pool = VNMeanPool_local(2)
+        
         
         
         # Residual groups
@@ -340,7 +330,7 @@ class VN_ResNet1D(nn.Module):
 
         self.residual_groups1 = self._make_residual_group1d(block_type, 64//3, group_sizes[0], stride=1)
         self.residual_groups2 = self._make_residual_group1d(block_type, 128//3, group_sizes[1], stride=2)
-        # self.residual_groups3 = self._make_residual_group1d(block_type, 256//3, group_sizes[2], stride=2)
+        self.residual_groups3 = self._make_residual_group1d(block_type, 256//3, group_sizes[2], stride=2)
         self.residual_groups4 = self._make_residual_group1d(block_type, 512//3, group_sizes[3], stride=2)
         
         
@@ -349,7 +339,7 @@ class VN_ResNet1D(nn.Module):
         # diagonal : 1, pearson : 2, direct covariance : 3
         covariance_param = 1
         self.output_block2 = FcBlock(512//3*3 * block_type.expansion, out_dim*covariance_param, inter_dim)
-        self.output_block3 = FcBlock(512//3*3 * block_type.expansion, out_dim, inter_dim)
+        # self.output_block3 = FcBlock(512//3*3 * block_type.expansion, out_dim, inter_dim)
 
         self._initialize(zero_init_residual)
 
@@ -358,7 +348,10 @@ class VN_ResNet1D(nn.Module):
         # print(group_sizes[0],group_sizes[1],group_sizes[2],group_sizes[3])
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
-                conv1x1(self.inplanes, planes * block.expansion, stride=stride),
+                # conv1x1(self.inplanes, planes * block.expansion, stride=stride),
+                # nn.Linear(self.inplanes, planes * block.expansion),
+                # nn.AvgPool1d(kernel_size=1, stride=2, padding=0),
+                vn_conv1x1(self.inplanes, planes * block.expansion, stride=stride),
                 VNBatchNorm(planes * block.expansion, dim=4), 
             )
 
@@ -418,36 +411,29 @@ class VN_ResNet1D(nn.Module):
         
         # x = self.input_block_conv(torch.transpose(x,1,-1))
         
-        # print('x shape before input_block : ', x.shape)  #[1024, 6, 200] -> [3072, 2, 200]
+        # print('x shape before input_block_conv : ', x.shape)  #[1024, 6, 200] -> [3072, 2, 200]
         
+        ##1. input_block_conv is nn.Conv1d##
         x = self.input_block_conv(x)
-        # print("input_block_conv Layer Weight Shape:", self.input_block_conv.weight.shape)  #[21, 2, 7]
         x = torch.reshape(x,(-1, 3, x.size(1), x.size(2)))
+        ##1. input_block_conv is conv##
+        
+        ##2. input_block_conv is nn.Linear##
+        # x = self.input_block_conv(x.permute(0,2,1)).permute(0,2,1)
+        # x = torch.reshape(x,(-1, 3, x.size(1), x.size(2)))
+        # x = self.input_block_pool(x)
+        # # print('x shape after input_block_conv : ', x.shape)  #[3072, 21, 100]
+        # # print('x shape after input_block_conv : ', x.shape)  #[1024, 3, 21, 100]
+        ##2. input_block_conv is nn.Linear##
+        
         x = torch.permute(x,(0,2,1,3))
-        
-        # torch.cuda.synchronize()
-        # t4 = time.perf_counter()
-        # print('time elapsed input_block_conv: ', abs(t3-t4))
-        
-        # self.input_block_bn.to('cuda')
-        # print('x shape before input_block_bn : ', x.shape)  #[1024, 21, 3, 100]
         x = self.input_block_bn(x)
-        
-        # self.input_block_relu.to('cuda')
         x = self.input_block_relu(x)
-        
-        # torch.cuda.synchronize()
-        # t5 = time.perf_counter()
-        # print('time elapsed input_block_relu: ', abs(t5-t4))
-          
-        # torch.cuda.synchronize()
-        # t6 = time.perf_counter()
-        # print('time elapsed input_block_bn: ', abs(t5-t6))
-
-        # x = self.local_pool(x,2)      
         b,c,h,w = x.shape
-        x = self.local_pool(x.reshape(-1, h,w))  
-        x = torch.reshape(x,(b,c,x.shape[1],x.shape[2]))
+        # x = self.local_pool(x.reshape(-1, h,w))  
+        # x = torch.reshape(x,(b,c,x.shape[1],x.shape[2]))
+        x = self.local_pool(x)
+        # print('x shape after local_pool : ', x.shape)  #[1024, 21, 3, 50]
         
         # torch.cuda.synchronize()
         # t7 = time.perf_counter()
@@ -463,40 +449,40 @@ class VN_ResNet1D(nn.Module):
         # print('shape of x after residual_groups1 : ', x.shape)  #[1024, 64, 50]   -> [1024, 10, 6, 50]  -> [1024, 21, 3, 50]
         x = self.residual_groups2(x)
         
-        # # torch.cuda.synchronize()
-        # # t9 = time.perf_counter()
-        # # print('time elapsed residual_groups2: ', t9-t8)
+        # torch.cuda.synchronize()
+        # t9 = time.perf_counter()
+        # print('time elapsed residual_groups2: ', t9-t8)
 
         
-        # # print('shape of x after residual_groups2 : ', x.shape)  #[1024, 128, 25]  -> [1024, 21, 6, 25]
-        # # x = self.residual_groups3(x)
-        # # x = self.local_pool(x,2)      
+        # print('shape of x after residual_groups2 : ', x.shape)  #[1024, 128, 25]  -> [1024, 21, 6, 25]
+        x = self.residual_groups3(x)
+        # x = self.local_pool(x,2)      
         # b,c,h,w = x.shape
         # x = self.local_pool(x.reshape(-1, h,w))  
         # x = torch.reshape(x,(b,c,x.shape[1],x.shape[2]))
         
-        # # torch.cuda.synchronize()
-        # # t10 = time.perf_counter()
-        # # print('time elapsed residual_groups3: ', t10-t9)
+        # torch.cuda.synchronize()
+        # t10 = time.perf_counter()
+        # print('time elapsed residual_groups3: ', t10-t9)
         
         
         # print('shape of x after residual_groups3 : ', x.shape)  #[1024, 256, 13]  -> [1024, 42, 6, 13]
         x = self.residual_groups4(x)
         # x = self.local_pool(x,2)      
-        b,c,h,w = x.shape
-        x = self.local_pool(x.reshape(-1, h,w))  
-        x = torch.reshape(x,(b,c,x.shape[1],x.shape[2]))
+        # b,c,h,w = x.shape
+        # x = self.local_pool(x.reshape(-1, h,w))  
+        # x = torch.reshape(x,(b,c,x.shape[1],x.shape[2]))
         
                   
         # print('x shape after residual_groups4 : ', x.shape)  # 
         # x = x.reshape(x.shape[0], -1, x.shape[-1])   #[1024, 510, 7]
-        # print('x shape before output_block1 : ', x.shape)  # [1024, 64, 50] -> [1024, 21, 3, 50]
+        # print('x shape before output_block1 : ', x.shape)  # [1024, 64, 50] -> [1024, 21, 3, 50] -> [1024, 170, 3, 7]
         
         # torch.cuda.synchronize()
         # t11 = time.perf_counter()
         # print('time elapsed residual_groups4: ', t11-t1)
                  
-        # mean = self.output_block1(x)  # mean
+        mean = self.output_block1(x)  # mean
         
         ###### covariance matrix estimation
         # ###### 1. if regress direct 3*3 covariance
@@ -540,30 +526,31 @@ class VN_ResNet1D(nn.Module):
         ###### 2. elif regress pearson or diagonal parameter
         covariance = self.output_block2(x)  # pearson : [n x 6] or diagonal : [n x 3]
 
-        mean_vel = self.output_block3(x)  # bodyframe velocity
+        # mean_vel = self.output_block3(x)  # bodyframe velocity
         
-        # >>> SO(3) Equivariance Check : (3,1) vector and (3,3) covariance
+        # # >>> SO(3) Equivariance Check : (3,1) vector and (3,3) covariance
          
         # print('value x after layers : ',mean[:1,:])    
+        # print()
         # rotation_matrix = np.array([[0.1097, 0.1448, 0.9834],[0.8754, -0.4827, -0.0266],[0.4708, 0.8637, -0.1797]])
         # rotation_matrix = torch.from_numpy(rotation_matrix).to('cuda').to(torch.float32)
         # mean_rot = torch.matmul(rotation_matrix, mean.permute(1,0)).permute(1,0)
         # print('rotated value x after layers : ', mean_rot[:1,]) 
         
-        #1. using tlio's cov
-        # print('covariance after layers : ',covariance[:1,:])    
-        # rotation_matrix = np.array([[0.1097, 0.1448, 0.9834],[0.8754, -0.4827, -0.0266],[0.4708, 0.8637, -0.1797]])
-        # rotation_matrix = torch.from_numpy(rotation_matrix).to('cuda').to(torch.float32)
-        # covariance_rot = torch.matmul(torch.matmul(rotation_matrix, covariance.permute(1,0)).permute(1,0), rotation_matrix.T)
-        # print('rotated value x after layers : ', covariance_rot[:1,:]) 
+        # #1. using tlio's cov
+        # # print('covariance after layers : ',covariance[:1,:])    
+        # # rotation_matrix = np.array([[0.1097, 0.1448, 0.9834],[0.8754, -0.4827, -0.0266],[0.4708, 0.8637, -0.1797]])
+        # # rotation_matrix = torch.from_numpy(rotation_matrix).to('cuda').to(torch.float32)
+        # # covariance_rot = torch.matmul(torch.matmul(rotation_matrix, covariance.permute(1,0)).permute(1,0), rotation_matrix.T)
+        # # print('rotated value x after layers : ', covariance_rot[:1,:]) 
         
-        #2. using 3*3 cov
-        # print('covariance after layers : ',covariance[:1,:,:])    
-        # rotation_matrix = np.array([[0.1097, 0.1448, 0.9834],[0.8754, -0.4827, -0.0266],[0.4708, 0.8637, -0.1797]])
-        # rotation_matrix = torch.from_numpy(rotation_matrix).to('cuda').to(torch.float32)
-        # covariance_rot = torch.matmul(torch.matmul(rotation_matrix, covariance.permute(1,2,0)).permute(2,0,1), rotation_matrix.T)
-        # print('rotated value x after layers : ', covariance_rot[:1,:,:]) 
-        # <<< SO(3) Equivariance Check
+        # #2. using 3*3 cov
+        # # print('covariance after layers : ',covariance[:1,:,:])    
+        # # rotation_matrix = np.array([[0.1097, 0.1448, 0.9834],[0.8754, -0.4827, -0.0266],[0.4708, 0.8637, -0.1797]])
+        # # rotation_matrix = torch.from_numpy(rotation_matrix).to('cuda').to(torch.float32)
+        # # covariance_rot = torch.matmul(torch.matmul(rotation_matrix, covariance.permute(1,2,0)).permute(2,0,1), rotation_matrix.T)
+        # # print('rotated value x after layers : ', covariance_rot[:1,:,:]) 
+        # # <<< SO(3) Equivariance Check
             
         
-        return mean_vel, covariance 
+        return mean, covariance

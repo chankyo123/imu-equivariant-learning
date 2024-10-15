@@ -561,7 +561,10 @@ def run(args, dataset):
     angular_drift_filter = np.linalg.norm(euls[-1, 2] - ref_euls[-1, 2])
 
     filter_heading_error = wrap_rpy(euls - ref_euls)[:, 2]
-    ate_filter = np.sqrt(np.mean(np.linalg.norm(ps_filter - ps_gt, axis=1) ** 2))
+    # ate_filter = np.sqrt(np.mean(np.linal/g.norm(ps_filter - ps_gt, axis=1) ** 2))
+    ####2. 2d ate####
+    ate_filter = np.sqrt(np.mean(np.linalg.norm(ps_filter[:, :2] - ps_gt[:, :2], axis=1) ** 2))
+    ####2. 2d ate####
     metric_map["filter"]["drift_ratio"] = drift_filter / traj_length
     metric_map["filter"]["ate"] = ate_filter
     metric_map["filter"]["mhe"] = np.sqrt(

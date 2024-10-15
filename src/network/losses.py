@@ -106,16 +106,17 @@ def get_loss(pred, pred_logstd, targ, epoch, body_frame_3regress = False):
 
     if body_frame_3regress: 
       # loss = criterion_distribution(pred, pred_logstd, targ, use_DiagonalParam)
-      loss = loss_distribution_diag(pred, pred_logstd, targ)
-      # loss = loss_mse(pred, targ)
-    else:
+      # loss = loss_distribution_diag(pred, pred_logstd, targ)
+      loss = loss_mse(pred, targ)
       # if epoch < 10 or epoch > 90:
+    else:
       #   loss = loss_mse(pred, targ)
         
       # else: 
       #   loss = loss_distribution_diag(pred, pred_logstd, targ)
         
-      loss = loss_distribution_diag(pred, pred_logstd, targ)
+      # loss = loss_distribution_diag(pred, pred_logstd, targ)
+      loss = loss_mse(pred, targ)
         
 
     return loss

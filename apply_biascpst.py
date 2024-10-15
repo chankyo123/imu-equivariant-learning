@@ -92,7 +92,7 @@ class Args:
         self.root_dir = root_dir
 
 # Example usage
-args = Args(root_dir="./local_data/tlio_golden")
+args = Args(root_dir="./local_data_bodyframe/tlio_golden")
 root_dir = args.root_dir
 
 apply_calibration_to_files(root_dir, args)

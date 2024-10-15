@@ -6,10 +6,12 @@ Output: 3x1 displacement, 3x1 covariance parameters
 
 import network
 from utils.argparse_utils import add_bool_arg
+# import torch.multiprocessing as mp
 
 
 if __name__ == "__main__":
     import argparse
+    # mp.set_start_method('spawn')
 
     parser = argparse.ArgumentParser()
 
@@ -36,6 +38,7 @@ if __name__ == "__main__":
     parser.add_argument("--cpu", action="store_true")
     parser.add_argument("--input_dim", type=int, default=6)
     parser.add_argument("--body_frame", type=str, default="True")
+    parser.add_argument("--close_loop", type=str, default="False")
     # add_bool_arg(parser, "body_frame", default=True)
     parser.add_argument("--output_dim", type=int, default=3)
     parser.add_argument("-j", "--workers", type=int, default=4)

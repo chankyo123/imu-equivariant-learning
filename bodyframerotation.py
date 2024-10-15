@@ -4,23 +4,32 @@ import os
 import shutil
 import json
 
-world_2_body_transformation = True
+world_2_body_transformation = False
 
 # Define the paths to the source and destination directories
 # source_directory = './local_data/tlio_golden'
 # destination_directory = './local_data_bodyframe/tlio_golden'
-# source_directory = './local_data_bodyframe_test_so3/tlio_golden'
-# destination_directory = './local_data_test_so3/tlio_golden'
-source_directory = './local_data_bodyframe_test_so3_2/tlio_golden'
-destination_directory = './local_data_test_so3/tlio_golden'
+
+# source_directory = './local_data_bodyframe_test_so3_fixed_2/tlio_golden'
+# destination_directory = './local_data_test_so3_fixed_2/tlio_golden'
+
+# source_directory = './so3_local_data_bodyframe_quat'
+# destination_directory = './so3_local_data_worldframe_quat'
+
+# source_directory = './so2_local_data_bodyframe'
+# destination_directory = './so2_local_data_worldframe'
+
+source_directory= './june_sim_imu_longerseq_idso3'
+destination_directory = './june_sim_imu_longerseq_worldframe_idso3'
 
 # source_directory = './local_data_bodyframe_test_so2_fixed/tlio_golden'
 # destination_directory = './local_data_test_so2_fixed/tlio_golden'
 # source_directory = './local_data_bodyframe_test_so2_fixed_notcsv/tlio_golden'
 # destination_directory = './local_data_test_so2_fixed_notcsv/tlio_golden'
 
-source_directory= './sim_imu_longerseq_worldframe'
-destination_directory = './sim_imu_longerseq'
+# source_directory= './sim_imu_longerseq'
+# destination_directory = './sim_imu_longerseq_worldframe'
+
 # source_directory = './sim_imu_longerseq_idso3_fixed2'
 # destination_directory = './sim_imu_longerseq_idso3_fixed2_2_worldframe'
 
@@ -98,7 +107,10 @@ specific_files = ['all_ids.txt', 'spline_metrics.csv', 'test_list.txt', 'train_l
 
 # Copy the specific files from the source directory to the destination directory
 for file in specific_files:
-    file_path = os.path.join('./local_data_bodyframe_test_so2/tlio_golden', file)
+    file_path = os.path.join('./so3_local_data_bodyframe', file)
+    # file_path = os.path.join('./sim_imu_longerseq', file)
+    # file_path = os.path.join('./june_sim_imu_longerseq', file)
+    
     if os.path.exists(file_path):
         shutil.copy(file_path, destination_directory)
         print(file_path)

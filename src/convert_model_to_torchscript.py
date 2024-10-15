@@ -35,8 +35,8 @@ def load_and_convert(args):
     net.load_state_dict(checkpoint["model_state_dict"])
     net.eval().to(device)
     
-    # input_sequence_dim = past_data_size + disp_window_size
-    input_sequence_dim = 200 #200hz
+    input_sequence_dim = past_data_size + disp_window_size
+    # input_sequence_dim = 200 #200hz
     # input_sequence_dim = 20 #20hz
     # input_sequence_dim = 100 #100hz
 

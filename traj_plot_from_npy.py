@@ -214,15 +214,19 @@ def load_and_process_worldframe_acc(file_path):
     acc_compensated = acc_world + gravity
 
     # Calculate time step
-    time_step = np.diff(time)
+    time_step = np.diff(time)*1e-6
     time_step = np.append(time_step, time_step[-1])  # Append the last time step to match the length
 
     # Integrate acceleration to get velocity
-    vel = np.cumsum(acc_compensated * time_step[:, None], axis=0)
-    print(gt_vel - vel)
+    vel = np.cumsum(acc_compensated * time_step[:, None], axis=0)+gt_vel[0:1,:]
+    # print(gt_vel - vel)
+    # print(gt_vel[:10,:])
+    # print(vel[:10,:])
     # Integrate velocity to get position
     pos = np.cumsum(vel * time_step[:, None], axis=0)
-
+    pos_gt = np.cumsum(gt_vel * time_step[:, None], axis=0)
+    print(pos_gt[:10,:])
+    print(pos[:10,:])
     # # Plot velocities and positions in subplots
     fig, axs = plt.subplots(2, figsize=(15, 10))
 
@@ -247,7 +251,7 @@ def load_and_process_worldframe_acc(file_path):
     # axs[0, 1].grid()
 
     # # Plot 2D XY trajectory from positions
-    axs[0].plot(pos[:, 0], pos[:, 1], label='2D XY Trajectory')
+    axs[0].plot(pos[:100000, 0], pos[:100000, 1], label='2D XY Trajectory')
     axs[0].set_title('2D XY Trajectory')
     axs[0].set_xlabel('X Position')
     axs[0].set_ylabel('Y Position')
@@ -255,7 +259,8 @@ def load_and_process_worldframe_acc(file_path):
     axs[0].grid()
     axs[0].axis('equal')
     
-    axs[1].plot(data[:, -3], data[:, -2], label='2D XY Trajectory')
+    # axs[1].plot(data[:, -3], data[:, -2], label='2D XY Trajectory')
+    axs[1].plot(pos_gt[:100000, 0], pos_gt[:100000, 1], label='2D XY Trajectory')
     axs[1].set_title('2D XY Trajectory')
     axs[1].set_xlabel('X Position')
     axs[1].set_ylabel('Y Position')
@@ -384,7 +389,7 @@ def process_imu_data(npy_path):
     rotation_info = np.load("./so3_local_data_bodyframe2/rpy_values.npy")
     rotation_rpy = rotation_info[0,:]
     m_b2bprime = Rotation.from_euler('xyz', rotation_rpy, degrees=False).as_matrix()
-    # m_b2bprime = np.eye(3)
+    m_b2bprime = np.eye(3)
     gravity_vector = m_b2bprime @ np.array([0, 0, -9.81])
     acc_world = []
     for i in range(len(acc_body)):
@@ -429,7 +434,7 @@ def process_imu_data(npy_path):
 # npy_file_path = 'local_data_test_so3_fixed_2/tlio_golden/145820422949970/imu0_resampled.npy'
 
 npy_file_path = 'so3_local_data_bodyframe2/145820422949970/imu0_resampled.npy'
-# npy_file_path = 'local_data_bodyframe/tlio_golden/145820422949970/imu0_resampled.npy'
+npy_file_path = 'local_data/tlio_golden/145820422949970/imu0_resampled.npy'
 
 # npy_file_path = 'sim_imu_longerseq/17/imu0_resampled.npy'
 save_file_path = None
@@ -437,10 +442,11 @@ save_file_path = None
 # plot_xy_traj(data)
 # acc_plot(data)
 # compute_and_plot_trajectory(npy_file_path, save_file_path)
-compute_and_plot_trajectory_with_acceleration(npy_file_path, save_file_path)
+# compute_and_plot_trajectory_with_acceleration(npy_file_path, save_file_path)
+
 # process_imu_data(npy_file_path)
 
-# load_and_process_worldframe_acc(npy_file_path)
+load_and_process_worldframe_acc(npy_file_path)
 # get_acc(npy_file_path)
 
 

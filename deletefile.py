@@ -20,6 +20,7 @@ directory_path = '/workspace/imu-equivariant-learning/batch_filter_outputs_uf10/
 directory_path = '/workspace/imu-equivariant-learning/batch_filter_outputs_idso2_uf10/test_idso2_eq_2res_200hz_3input_mselss_0.5_pertb/'
 directory_path = '/workspace/imu-equivariant-learning/batch_filter_outputs_idso3_2_uf200/eq_2res_200hz_2input_mselss/'
 directory_path = '/workspace/imu-equivariant-learning/batch_filter_outputs_uf200/gtv_uf200/eq_2res_20hz_3input_samelss_nobias_ep200/'
+directory_path = '/workspace/imu-equivariant-learning/batch_filter_outputs_so3_uf20/so3_eq_2res_300hz_2input_samelss_yesbias3_ep200/'
 
 # directory_path = '/workspace/imu-equivariant-learning/batch_filter_outputs_sim_notjune_uf10/sim_eq_2res_200hz_3input_mselss/'
 

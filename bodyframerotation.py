@@ -3,33 +3,27 @@ from scipy.spatial.transform import Rotation
 import os
 import shutil
 import json
+import pandas as pd
+from scipy.interpolate import interp1d
+from scipy.spatial.transform import Rotation
 
-world_2_body_transformation = False
+world_2_body_transformation = True
 
 # Define the paths to the source and destination directories
-# source_directory = './local_data/tlio_golden'
-# destination_directory = './local_data_bodyframe/tlio_golden'
-
-# source_directory = './local_data_bodyframe_test_so3_fixed_2/tlio_golden'
-# destination_directory = './local_data_test_so3_fixed_2/tlio_golden'
-
-# source_directory = './so3_local_data_bodyframe_quat'
-# destination_directory = './so3_local_data_worldframe_quat'
-
-# source_directory = './so2_local_data_bodyframe'
-# destination_directory = './so2_local_data_worldframe'
-
-source_directory= './june_sim_imu_longerseq_idso3'
-destination_directory = './june_sim_imu_longerseq_worldframe_idso3'
+source_directory = './local_data/tlio_golden'
+destination_directory = './local_data_bodyframe_comp2/tlio_golden'
+# source_directory = './local_data_bodyframe_test_so3/tlio_golden'
+# destination_directory = './local_data_test_so3/tlio_golden'
+# source_directory = './local_data_bodyframe_test_so3_2/tlio_golden'
+# destination_directory = './local_data_test_so3/tlio_golden'
 
 # source_directory = './local_data_bodyframe_test_so2_fixed/tlio_golden'
 # destination_directory = './local_data_test_so2_fixed/tlio_golden'
 # source_directory = './local_data_bodyframe_test_so2_fixed_notcsv/tlio_golden'
 # destination_directory = './local_data_test_so2_fixed_notcsv/tlio_golden'
 
-# source_directory= './sim_imu_longerseq'
-# destination_directory = './sim_imu_longerseq_worldframe'
-
+# source_directory= './sim_imu_longerseq_worldframe'
+# destination_directory = './sim_imu_longerseq'
 # source_directory = './sim_imu_longerseq_idso3_fixed2'
 # destination_directory = './sim_imu_longerseq_idso3_fixed2_2_worldframe'
 
@@ -37,9 +31,19 @@ destination_directory = './june_sim_imu_longerseq_worldframe_idso3'
 os.makedirs(destination_directory, exist_ok=True)
 
 # Iterate over each subdirectory in the source directory
-for subdir in os.listdir(source_directory):
+
+subdirs = sorted([subdir for subdir in os.listdir(source_directory) if subdir.isdigit()], key=int)
+# print(len(subdirs))
+# print(len(os.listdir(source_directory)))
+
+for subdir in subdirs:
+# for subdir in os.listdir(source_directory):
     subdir_path = os.path.join(source_directory, subdir+"/")
 
+    # print(subdir)
+    # print(os.listdir(source_directory))
+    # assert False
+    
     # Check if it's a directory
     if os.path.isdir(subdir_path):
         # List all files in the subdirectory
@@ -75,7 +79,16 @@ for subdir in os.listdir(source_directory):
             # Apply inverse rotation to gyroscope, accelerometer, and velocity data
             #1. world -> body transformation
             if world_2_body_transformation:
+                
                 rotated_gyr_data = np.einsum('ijk,ik->ij', inverse_rotation_matrices, gyr_data)
+
+                gravity_comp = True
+                if gravity_comp :
+
+                    g_world = np.array([0, 0, 9.81])
+                    acc_data = acc_data - g_world
+                    
+    
                 rotated_acc_data = np.einsum('ijk,ik->ij', inverse_rotation_matrices, acc_data)
                 rotated_vel_data = np.einsum('ijk,ik->ij', inverse_rotation_matrices, vel_data)
             
@@ -101,16 +114,56 @@ for subdir in os.listdir(source_directory):
             np.save(os.path.join(destination_directory, subdir, file), np.concatenate([data[:, :1], rotated_gyr_data_array, rotated_acc_data_array, quaternion, data[:, 11:-3], rotated_vel_data_array], axis=1))
             print(os.path.join(destination_directory, subdir, file))
             # print(np.concatenate([data[:, :1], rotated_gyr_data_array, rotated_acc_data_array, quaternion, data[:, 11:-3], rotated_vel_data_array], axis=1).shape)
+            
+        #if compensate gravity also in csv file
+        csv_file_path = os.path.join(subdir_path, "imu_samples_calibrated.csv")
+        if os.path.exists(csv_file_path):
+            df = pd.read_csv(csv_file_path)
+            gyro_data = df.iloc[:, 2:5].values
+            acc_data = df.iloc[:, 5:8].values
+            t_us = df.iloc[:, 0].values * 1e-3  # Convert timestamp to milliseconds if needed
+            g_world = np.array([0, 0, 9.81])
+            time_gt = data[:, 0]
+            qxyzw_World_Device = data[:, -10:-6]
+
+            mask = (t_us >= time_gt[0]) & (t_us <= time_gt[-1])
+            t_us_filtered = t_us[mask]
+            acc_data_filtered = acc_data[mask]
+            gyro_data_filtered = gyro_data[mask]
+
+            interp_funcs_quaternion = [interp1d(time_gt, qxyzw_World_Device[:, i], fill_value="extrapolate") for i in range(qxyzw_World_Device.shape[1])]
+            interpolated_quaternions = np.stack([interp_func(t_us_filtered) for interp_func in interp_funcs_quaternion], axis=1)
+
+            norms = np.linalg.norm(interpolated_quaternions, axis=1, keepdims=True)
+            normalized_quaternions = interpolated_quaternions / norms
+
+            rotations = Rotation.from_quat(normalized_quaternions)
+            R_matrices = rotations.as_matrix()
+
+            g_device = np.einsum('ijk,k->ij', R_matrices.transpose(0, 2, 1), g_world)
+            print(acc_data_filtered[:5])
+            print(g_device[:5])
+            acc_data_corrected = acc_data_filtered - g_device
+            print(acc_data_corrected[:5])
+
+            df_filtered = df[mask].copy()
+            df_filtered.iloc[:, 5:8] = np.round(acc_data_corrected, 7)  # Update accelerometer data with 7 digits precision
+            df_filtered.iloc[:, 2:5] = np.round(gyro_data_filtered, 7)  # Update gyroscope data with 7 digits precision
+
+            df_filtered.iloc[:, 0] = df_filtered.iloc[:, 0].astype(int)
+            df_filtered.iloc[:, 1] = df_filtered.iloc[:, 1].astype(int)
+
+            rotated_csv_path = os.path.join(destination_directory, subdir, "imu_samples_calibrated.csv")
+            df_filtered.to_csv(rotated_csv_path, index=False, float_format='%.7f')
+
+            print(f"Saved new CSV file with gravity compensation at {rotated_csv_path}")
 
 # List of specific files to copy
 specific_files = ['all_ids.txt', 'spline_metrics.csv', 'test_list.txt', 'train_list.txt', 'val_list.txt', 'test_list1.txt', 'test_list2.txt', 'test_list3.txt', 'test_list4.txt']
 
 # Copy the specific files from the source directory to the destination directory
 for file in specific_files:
-    file_path = os.path.join('./so3_local_data_bodyframe', file)
-    # file_path = os.path.join('./sim_imu_longerseq', file)
-    # file_path = os.path.join('./june_sim_imu_longerseq', file)
-    
+    file_path = os.path.join('./local_data_bodyframe_test_so2/tlio_golden', file)
     if os.path.exists(file_path):
         shutil.copy(file_path, destination_directory)
         print(file_path)
@@ -128,10 +181,10 @@ for subdir in os.listdir(source_directory):
             file_path = os.path.join(subdir_path, file)
 
             # Check if it's not an npy file
-            if not file.endswith(".npy"):
+            if not file.endswith(".npy") and not file.endswith("calibrated.csv"):
                 # Copy the file to the destination subdirectory
                 shutil.copy(file_path, destination_subdir)
-                print(file_path)
+                print("copied file : ",file_path)
                 
                 # Check if it's imu0_resampled_description.json
                 if file == 'imu0_resampled_description.json':

@@ -41,16 +41,16 @@ class TransformAddNoiseBias:
                         (torch.rand(N, 3, 1, device=feat.device, dtype=feat.dtype) - 0.5)
                         # * self.gyro_bias_range / 0.5
                         # * self.gyro_bias_range / 0.5 * 0.5
-                        # * self.gyro_bias_range / 0.5 * 0.2
-                        * 0
+                        * self.gyro_bias_range / 0.5 * 0.2
+                        # * 0
                         # * 2 * self.gyro_bias_range / 0.5
                     )
                     feat_aug[:, 3:6, :] += (
                         (torch.rand(N, 3, 1, device=feat.device, dtype=feat.dtype) - 0.5)
                         # * self.accel_bias_range / 0.5
                         # * self.accel_bias_range / 0.5 * 0.5
-                        # * self.accel_bias_range / 0.5 * 0.2
-                        * 0
+                        * self.accel_bias_range / 0.5 * 0.2
+                        # * 0
                         # * 2 * self.accel_bias_range / 0.5
                     )
 

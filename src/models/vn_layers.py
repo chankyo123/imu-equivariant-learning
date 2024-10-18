@@ -145,13 +145,13 @@ class VNMaxPool(nn.Module):
         '''
         x: point features of shape [B, N_feat, 3, N_samples, ...]
         '''
-        print("input shape of vnmaxpool : ", x.shape)
+        # print("input shape of vnmaxpool : ", x.shape)
         d = self.map_to_dir(x.transpose(1,-1)).transpose(1,-1)
         dotprod = (x*d).sum(2, keepdims=True)
         idx = dotprod.max(dim=-1, keepdim=False)[1]
         index_tuple = torch.meshgrid([torch.arange(j) for j in x.size()[:-1]]) + (idx,)
         x_max = x[index_tuple]
-        print("output shape of vnmaxpool : ", x_max.shape)
+        # print("output shape of vnmaxpool : ", x_max.shape)
         return x_max
     
 class VNMeanPool(nn.Module):
@@ -182,6 +182,37 @@ def mean_pool(x, dim=-1, keepdim=False):
     return x.mean(dim=dim, keepdim=keepdim)
 
 
+class VNMeanPool_local(nn.Module):
+    def __init__(self, kernel=2):
+        super(VNMeanPool_local, self).__init__()
+        self.kernel = kernel    
+    def forward(self, x):
+        if len(x.shape) == 4:
+            B,C,N,W = x.shape
+            if isinstance(W, torch.Tensor):
+                W = W.item()
+            reduced_W = (W + 1)//2 if self.kernel == 2 and W % 2 == 1 else W //self.kernel
+            output = torch.zeros(B,C,N,reduced_W).to('cuda')
+
+            for i in range(reduced_W):
+                local_region = x[:, :, :, i * self.kernel : (i+1) * self.kernel]
+                local_average = local_region.mean(dim=3, keepdim=False)
+                output[:,:,:,i] = local_average
+            return output
+        else:
+            B,N,W = x.shape
+            if isinstance(W, torch.Tensor):
+                W = W.item()
+            reduced_W = (W + 1)//2 if self.kernel == 2 and W % 2 == 1 else W //self.kernel
+            output = torch.zeros(B,N,reduced_W).to('cuda')
+            
+            for i in range(reduced_W):
+                local_region = x[:, :, i * self.kernel : (i+1) * self.kernel]
+                local_average = local_region.mean(dim=2, keepdim=False)
+                output[:,:,i] = local_average
+            return output
+            
+            
 def local_mean_pool(x, kernel=2):
     if len(x.shape) == 4:
         B,C,N,W = x.shape

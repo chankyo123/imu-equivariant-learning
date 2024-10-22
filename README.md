@@ -82,6 +82,11 @@ python3 src/main_net.py \
 --out_dir models/resnet \
 --epochs 100
 ```
+or
+
+```
+CUDA_VISIBLE_DEVICES=0 python3 src/main_net.py --mode train --root_dir local_data_bodyframe/Euroc/ --out_dir models_eq/ln_conv_last_align_notcomp_2regress_nochannelmix_slope_1_largechannel_onechannelmix_mselss_nobias_ep300/ --epochs 300 --arch ln_resnet --input_dim 6 --body_frame True
+```
 
 **Note:** We offer multiple types of dataloaders to help speed up training.
 The `--dataset_style` arg can be `ram`, `mmap`, or `iter`. 
@@ -113,6 +118,17 @@ python3 src/main_net.py \
 --root_dir local_data/tlio_golden \
 --model_path models/resnet/checkpoint_*.pt \
 --out_dir test_outputs
+```
+
+or
+
+```
+CUDA_VISIBLE_DEVICES=0 python3 src/main_net.py --mode train --root_dir local_data_bodyframe/Euroc/ --out_dir models_eq/ln_conv_last_align_notcomp_2regress_nochannelmix_slope_1_largechannel_onechannelmix_mselss_nobias_ep300/ --epochs 300 --arch ln_resnet --input_dim 6 --body_frame True
+```
+
+Test
+```
+CUDA_VISIBLE_DEVICES=0 python3 src/main_net.py --mode test --root_dir local_data_bodyframe/tlio_golden/ --model_path ./models_eq/ln_conv_last_align_notcomp_2regress_nochannelmix_slope_1_onechannelmix_mselss_lessbias_2_ep300/checkpoint_best.pt --out_dir batch_test_outputs/ln_conv_last_align_notcomp_2regress_noln_conv_last_align_notcomp_2regress_nochannelmix_slope_1_mselss_nobias_ep300 --arch ln_resnet --body_frame True --input_dim 6
 ```
 
 

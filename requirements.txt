@@ -1,4 +1,8 @@
-numpy==1.21.1
+torch
+einops
+fvcore
+ipykernel
+numpy
 matplotlib
 pandas
 pyarrow
@@ -8,7 +12,7 @@ coloredlogs
 tensorboard
 seaborn
 git+https://github.com/utiasSTARS/liegroups@master
-numba==0.53.1
+numba
 h5py
 setuptools
 tqdm

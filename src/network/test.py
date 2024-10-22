@@ -556,7 +556,7 @@ def get_inference(network, data_loader, device, epoch, body_frame_3regress, clos
             else:
                 pred, pred_cov = network(feat)
                 pred_vel = pred
-                targ_vel =torch.zeros_like(pred_vel)
+                targ_vel = sample["vel_Body"][:,-1,:]
 
         targ = sample["targ_dt_World"][:,-1,:]
         

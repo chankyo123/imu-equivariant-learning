@@ -1,4 +1,4 @@
-local_data*
+# local_data*
 data
 __pycache__
 *.pyc
@@ -6,3 +6,8 @@ __pycache__
 *.swo
 train_result
 *outputs*
+venv    
+# models
+models_mlp
+models_eq
+# local_data_bodyframe

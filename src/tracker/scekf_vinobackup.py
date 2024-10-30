@@ -21,12 +21,10 @@ class State(object):
         self.si_Rs = []  # past states
         self.si_ps = []  # past states
         self.si_vs = []  # past states (velocity)
-        self.sn_vs = []  # past states (velocity) for network
         self.si_Rs_fej = []
         self.si_ps_fej = []
         self.si_vs_fej = [] 
         self.si_timestamps_us = []
-        self.sn_timestamps_us = []
         self.unobs_shift = None
         
         self.InEKF_StateType = "WorldCentric"
@@ -47,14 +45,12 @@ class State(object):
         self.si_Rs = []
         self.si_ps = []
         self.si_vs = []
-        self.sn_vs = []  # past states (velocity) for network
         self.si_Rs_fej = []
         self.si_ps_fej = []
         self.si_vs_fej = []
             
 
         self.si_timestamps_us = []
-        self.sn_timestamps_us = []
         self.unobs_shift = self.generate_unobservable_shift()
 
     def reset_state(self, Rs, ps, vs, R, v, p, ba_init, bg_init):
@@ -67,7 +63,6 @@ class State(object):
         self.si_Rs = Rs
         self.si_ps = ps
         self.si_vs = vs
-        self.sn_vs = vs.copy()
         self.si_Rs_fej = Rs
         self.si_ps_fej = ps
         self.si_vs_fej = vs
@@ -144,7 +139,7 @@ class State(object):
 
 
 @jit(nopython=True, parallel=False, cache=True)
-def propagate_rvt_and_jac(R_k, v_k, p_k, b_gk, b_ak, gyr, acc, g, dt, m_b2bprime):
+def propagate_rvt_and_jac(R_k, v_k, p_k, b_gk, b_ak, gyr, acc, g, dt):
     def hat(v):
         v = v.flatten()
         R = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
@@ -155,8 +150,8 @@ def propagate_rvt_and_jac(R_k, v_k, p_k, b_gk, b_ak, gyr, acc, g, dt, m_b2bprime
     Rd = R_k @ dRd
     dv_w = R_k @ (acc - b_ak) * dt
     dp_w = 0.5 * dv_w * dt
-    gdt = m_b2bprime @ ( g * dt )
-    gdt22 = m_b2bprime @ ( 0.5 * gdt * dt )
+    gdt = g * dt
+    gdt22 = 0.5 * gdt * dt
     vd = v_k + dv_w + gdt
     pd = p_k + v_k * dt + dp_w + gdt22
 
@@ -200,9 +195,9 @@ class ImuMSCKF:
             )
 
         # constants
-        # g_norm = getattr(config, "g_norm", 9.81)
-        g_norm = getattr(config, "g_norm", 9.8067)
+        g_norm = getattr(config, "g_norm", 9.81)
         self.g = np.array([0, 0, -g_norm]).reshape((3, 1))
+        # self.g = np.array([0, 0, 0]).reshape((3, 1))
 
         # parameters
         self.sigma_na = getattr(config, "sigma_na", np.sqrt(1e-3))  # accel noise m/s^2
@@ -223,8 +218,14 @@ class ImuMSCKF:
         self.init_ba_sigma = getattr(config, "init_ba_sigma", 0.2)  # m/s^2
 
         # other tuning parameters
-        # self.meascov_scale = getattr(config, "meascov_scale", 1.0)
-        self.meascov_scale = getattr(config, "meascov_scale", 1.0) * 0.1
+        self.meascov_scale = getattr(config, "meascov_scale", 1.0)
+        # self.meascov_scale = getattr(config, "meascov_scale", 1.0) * 0.1
+        # self.meascov_scale = getattr(config, "meascov_scale", 1.0) * 0.02
+        # self.meascov_scale = getattr(config, "meascov_scale", 1.0) * 10
+        # self.meascov_scale = getattr(config, "meascov_scale", 1.0) * 5
+        # self.meascov_scale = getattr(config, "meascov_scale", 1.0) * 0.01
+        # self.meascov_scale = getattr(config, "meascov_scale", 1.0) * 0.5
+        print("self.meascov_scale : ", self.meascov_scale)
         self.mahalanobis_factor = 1
 
         # debug config
@@ -346,9 +347,10 @@ class ImuMSCKF:
 
     def get_past_state(self, t_us):
         assert isinstance(t_us, int)
-        p = None
+        # print(self.state.si_timestamps_us)
         state_idx = self.state.si_timestamps_us.index(t_us)
         R = self.state.si_Rs[state_idx]
+        p = None
         # p = self.state.si_ps[state_idx]
 
         return R, p
@@ -509,8 +511,8 @@ class ImuMSCKF:
         # assert False
         dimTheta = self.state.dimTheta
 
-        # # # if no bias update
-        # # Theta = np.zeros((6,1))
+        # # if no bias update
+        # # # Theta = np.zeros((6,1))
         # P[dimP-dimTheta:dimP-dimTheta+6,dimP-dimTheta:dimP-dimTheta+6] = 0.0001*np.eye(6)
         # P[0:dimP-dimTheta,dimP-dimTheta:dimP] = np.zeros((dimP-dimTheta,dimTheta))
         # P[dimP-dimTheta:dimP,0:dimP-dimTheta] = np.zeros((dimTheta,dimP-dimTheta))
@@ -528,9 +530,8 @@ class ImuMSCKF:
         # N = 0.1*np.eye(3)
         # N = 0.01*np.eye(3)
         
-        N = self.meascov_scale * meas_cov
-        # threshold = 1e10
-        # N = np.where(np.isinf(N), threshold, N)
+        
+        # print('N value : ', N)  #set to be -> N value :  [0.01 0.01 0.01]
         # print('N!!')
         # N = 0.001*np.eye(3)
         
@@ -539,11 +540,20 @@ class ImuMSCKF:
             val_y = self.const_cov_val_y
             val_z = self.const_cov_val_z
             N = self.meascov_scale * np.diag(np.array([val_x, val_y, val_z]))
+            # print("N : ", N)
+            
             # print('N value : ', np.array([val_x, val_y, val_z]))  #set to be -> N value :  [0.01 0.01 0.01]
         else:
-            None
-            # print('N value : ', N)  #set to be -> N value :  [0.01 0.01 0.01]
-             
+            N = self.meascov_scale * meas_cov
+            # H = np.zeros((3, dimP))
+            # H[0:3,3:6] = np.eye(3) # I
+            # PHT = P @ H.T
+            # S = H @ PHT + N
+            
+            # if np.isnan(np.sqrt(np.diag(S))).any():
+            #     print("nan check working!")
+            #     N = np.array([[0.01, 0.01, 0.01]])
+        
         # symmetrize N
         N = 0.5 * (N + N.T)
         N[N < 1e-10] = 0
@@ -565,20 +575,27 @@ class ImuMSCKF:
             normalized_square_error = np.linalg.multi_dot(
                 [Z_tmp.T, Sinv_temp, Z_tmp]
             )
+            # maha_constant = 30
+            # maha_constant = 20
             
             maha_constant = 1
+            # maha_constant = 0.9
+            # maha_constant = 1.5
             # maha_constant = 0.8
             # maha_constant = 0.7
             # maha_constant = 0.75
+            # maha_constant = 0.5
+            
+            # maha_constant = 300
+            # maha_constant = 1.4
 
             # test_failed = normalized_square_error > mahalanobis_factor * 11.345 * maha_constant  #cov2까지는 200을 곱했었음
-            test_failed = np.any(np.sqrt(np.diag(S_temp)).reshape(3, 1) > 2.5)
+            test_failed = np.any(np.sqrt(np.diag(S_temp)).reshape(3, 1) > 2)
             # print(np.sqrt(np.diag(S_temp)).reshape(3,1))
-            
             # wait for convergence before failing
             if test_failed:
                 # print("Mahalanobis test failed... xi2 =", normalized_square_error)
-                # print("Mahalanobis test failed... xi2 =", np.sqrt(np.diag(S_temp)).reshape(-1))
+                print("Mahalanobis test failed... xi2 =", np.sqrt(np.diag/(S_temp)).reshape(-1))
                 
                 # ##1. return
                 # return
@@ -588,10 +605,20 @@ class ImuMSCKF:
                 val_x = self.const_cov_val_x
                 val_y = self.const_cov_val_y
                 val_z = self.const_cov_val_z
-                N = self.meascov_scale * np.diag(np.array([val_x, val_y, val_z]))
+                N = 10 * np.diag(np.array([val_x, val_y, val_z]))
                 # N = self.meascov_scale * np.diag(np.array([val_x, val_y, val_z])) * 0.1
                 ###2. const R
 
+                ###3. use maha_fail_scale
+                # mahalanobis_fail_scale = 2
+                # # mahalanobis_fail_scale = 0.5
+                # N = mahalanobis_fail_scale * N
+                ###3. use maha_fail_scale
+
+            # else:
+            #     print("normalized_square_error =", normalized_square_error)
+                
+            # break
                     
                     
         b = np.array([0, 0, 0, -1, 0]).reshape(-1,1)
@@ -622,43 +649,25 @@ class ImuMSCKF:
         self.state.s_R = X_new[0:3, 0:3]
         self.state.s_v = X_new[0:3, 3].reshape(-1, 1)
         self.state.s_p = X_new[0:3, 4].reshape(-1, 1)
-        self.state.s_ba = Theta_new[3:6].reshape(-1, 1)
+        
+        # # #if bias update in update/correction
         self.state.s_bg = Theta_new[0:3].reshape(-1, 1)
+        self.state.s_ba = Theta_new[3:6].reshape(-1, 1)
+        # print("gyro bias : ", self.state.s_bg.reshape(-1))
+        # print("acc bias : ", self.state.s_ba.reshape(-1))
+        # # # #if no bias update also in update/correction
+        # self.state.s_bg = b_g.reshape(-1, 1)
+        # self.state.s_ba = b_a.reshape(-1, 1)
         
         # self.state.si_Rs.append(self.state.s_R)  
         # self.state.si_vs.append(self.state.s_R.T @ self.state.s_v)  #save body velocity
         # self.state.si_timestamps_us.append(t_end_us)
         # # self.state.si_vs.append(self.state.s_v)     #save world velocity
-        self.state.sn_timestamps_us.append(t_end_us)
-        self.state.sn_vs.append(self.state.s_R.T @ self.state.s_v)  #save body velocity
 
         # Update Covariance
         IKH = np.eye(dimP) - K @ H
         P_new = IKH @ P @ IKH.T + K @ N @ K.T
         
-        # try:
-        #     P_new = IKH @ P @ IKH.T + K @ N @ K.T
-        #     # print(f"IKH: {IKH}")
-        #     # print(f"P: {P}")
-        #     # print(f"K: {K}")
-        #     # print(f"N: {N}")
-        #     # print(f"IKH @ P: {IKH @ P}")
-        #     # print(f"IKH @ P @ IKH.T: {IKH @ P @ IKH.T}")
-        #     # print(f"K @ N: {K @ N}")
-        #     # print(f"K @ N @ K.T: {K @ N @ K.T}")
-        # except RuntimeWarning:
-        #     print("RuntimeWarning encountered during matrix multiplication.")
-        #     print(f"IKH: {IKH}")
-        #     print(f"P: {P}")
-        #     print(f"K: {K}")
-        #     print(f"N: {N}")
-            
-        #     # Optionally, print intermediate results:
-        #     print(f"IKH @ P: {IKH @ P}")
-        #     print(f"IKH @ P @ IKH.T: {IKH @ P @ IKH.T}")
-        #     print(f"K @ N: {K @ N}")
-        #     print(f"K @ N @ K.T: {K @ N @ K.T}")
-
         # # Don't update yaw covariance
         # yaw_index = dimP - dimTheta + 2
         # P_new[yaw_index, :] = 0
@@ -681,7 +690,7 @@ class ImuMSCKF:
         self.Sigma15 = P_new
         
         
-    def propagate(self, acc, gyr, t_us, t_augmentation_us=None, m_b2bprime=np.eye(3)):
+    def propagate(self, acc, gyr, t_us, t_augmentation_us=None):
 
         R_k, v_k, p_k, b_ak, b_gk = (
             self.state.s_R,
@@ -696,7 +705,6 @@ class ImuMSCKF:
         dt_us = t_us - self.state.s_timestamp_us
         R_kp1, v_kp1, p_kp1, Akp1 = propagate_rvt_and_jac(
             R_k, v_k, p_k, b_gk, b_ak, gyr, acc, self.g, dt_us * 1e-6
-            ,m_b2bprime
         )
         b_gkp1 = b_gk
         b_akp1 = b_ak
@@ -712,7 +720,6 @@ class ImuMSCKF:
             dtd_us = t_augmentation_us - self.state.s_timestamp_us
             Rd, vd, pd, Ad = propagate_rvt_and_jac(
                 R_k, v_k, p_k, b_gk, b_ak, gyr, acc, self.g, dtd_us * 1e-6
-                ,m_b2bprime
             )
 
             # propagate covariance
@@ -1000,7 +1007,7 @@ class ImuMSCKF:
             Phi[6:9,0:3] = 0.5*gx*dt2
             Phi[6:9,3:6] = np.eye(3)*dt
             
-            #if bias update
+            # if bias update
             Phi[0:3,dimP-dimTheta:dimP-dimTheta+3] = -RG1dt
             Phi[3:6,dimP-dimTheta:dimP-dimTheta+3] = -skew(v+RG1dt@a+self.g*dt)@RG1dt + RG0@Phi25L
             Phi[6:9,dimP-dimTheta:dimP-dimTheta+3] = -skew(p+v*dt+RG2dt2@a+0.5*self.g*dt2)@RG1dt + RG0@Phi35L
@@ -1009,7 +1016,7 @@ class ImuMSCKF:
             Phi[3:6,dimP-dimTheta+3:dimP-dimTheta+6] = -RG1dt
             Phi[6:9,dimP-dimTheta+3:dimP-dimTheta+6] = -RG2dt2
             
-            # if no bias update
+            # # if no bias update
             # Phi[:, dimP - dimTheta:] = np.zeros((dimP, dimTheta))
 
         return Phi

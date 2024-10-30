@@ -262,6 +262,7 @@ def run(args, dataset):
             )
         ronin_ts = ronin[:, 0]
         ronin_p = ronin[:, 1:4]
+        ronin_v = ronin[:, 7:10]
         # print(ts[0], ts[-1])
         # print(ronin_ts[0], ronin_ts[-1])
         # assert False
@@ -274,10 +275,13 @@ def run(args, dataset):
         if ronin_ts[0] > ts[0]:
             ronin_ts = np.insert(ronin_ts, 0, ts[0])
             ronin_p = np.concatenate([ronin_p[0].reshape(1, 3), ronin_p], axis=0)
+            ronin_v = np.concatenate([ronin_v[0].reshape(1, 3), ronin_v], axis=0)
         if ronin_ts[-1] < ts[-1]:
             ronin_ts = np.insert(ronin_ts, -1, ts[-1])
             ronin_p = np.concatenate([ronin_p, ronin_p[-1].reshape(1, 3)], axis=0)
+            ronin_v = np.concatenate([ronin_v, ronin_v[-1].reshape(1, 3)], axis=0)
         ronin_p = interp1d(ronin_ts, ronin_p, axis=0)(ts)
+        ronin_v = interp1d(ronin_ts, ronin_v, axis=0)(ts)
 
     # get vio states
     if not args.plot_sim:
@@ -302,6 +306,7 @@ def run(args, dataset):
             vio_ts = data[:, 0] * 1e-6
             vio_rq = data[:,-10:-6]
             vio_p = data[:,-6:-3]
+            print("here")
             vio_v = data[:,-3:]
             vio_r = Rotation.from_quat(vio_rq)
             vio_euls = vio_r.as_euler("xyz", degrees=True)
@@ -562,6 +567,9 @@ def run(args, dataset):
 
     filter_heading_error = wrap_rpy(euls - ref_euls)[:, 2]
     ate_filter = np.sqrt(np.mean(np.linalg.norm(ps_filter - ps_gt, axis=1) ** 2))
+    # ####2. 2d ate####
+    # ate_filter = np.sqrt(np.mean(np.linalg.norm(ps_filter[:, :2] - ps_gt[:, :2], axis=1) ** 2))
+    # ####2. 2d ate####
     metric_map["filter"]["drift_ratio"] = drift_filter / traj_length
     metric_map["filter"]["ate"] = ate_filter
     metric_map["filter"]["mhe"] = np.sqrt(
@@ -571,6 +579,11 @@ def run(args, dataset):
     metric_map["filter"]["angular_drift_deg_hour"] = (
         angular_drift_filter / ts.max() * 3600
     )
+    
+    rmse_vel = np.sqrt(np.mean(np.linalg.norm(vs[start_idx:end_idx, :] - ref_v[start_idx:end_idx, :], axis=1) ** 2))
+    # rmse_vel = rmse_vel.astype(np.float64)
+    metric_map["filter"]["rmse_vel"] = rmse_vel
+    
     # logging.info(f"drift of filter {metric_map['filter']['drift_ratio']}")
     # logging.info(f"ATE of filter {metric_map['filter']['ate']}")
     # logging.info(f"Mean Heading error of filter {metric_map['filter']['mhe']}")
@@ -598,6 +611,7 @@ def run(args, dataset):
         ps_ronin = ps_ronin - (ps_ronin[0, :] - ps_gt[0, :])
         drift_ronin = np.linalg.norm(ps_ronin[-1, :] - ps_gt[-1, :])
         ate_ronin = np.sqrt(np.mean(np.linalg.norm(ps_ronin - ps_gt, axis=1) ** 2))
+        rmse_vel_ronin = np.sqrt(np.mean(np.linalg.norm(ronin_v[start_idx:end_idx, :] - ref_v[start_idx:end_idx, :], axis=1) ** 2))
         # angular_drift_ronin = np.linalg.norm(
         #     aekf_euls_time_aligned[-1, 2] - ref_euls[-1, 2]
         # )
@@ -607,6 +621,7 @@ def run(args, dataset):
         heading_error_ronin = wrap_rpy(aekf_euls_time_aligned - ref_euls)[:, 2]
         metric_map["ronin"]["drift_ratio"] = drift_ronin / traj_length
         metric_map["ronin"]["ate"] = ate_ronin
+        metric_map["ronin"]["rmse_vel"] = rmse_vel_ronin
 
         metric_map["ronin"]["mhe"] = np.sqrt(
             np.nansum(heading_error_ronin ** 2)
@@ -787,25 +802,25 @@ def run(args, dataset):
         sigma_r[idxs, :],
         color=color_filter,
     )
-    # fig4 = plot_state_euclidean(
-    #     "accel bias",
-    #     "filter",
-    #     ["ba_x", "ba_y", "ba_z"],
-    #     ts[idxs],
-    #     ba[idxs, :],
-    #     sigma_ba[idxs, :],
-    #     color=color_filter,
-    # )
+    fig4 = plot_state_euclidean(
+        "accel bias",
+        "filter",
+        ["ba_x", "ba_y", "ba_z"],
+        ts[idxs],
+        ba[idxs, :],
+        sigma_ba[idxs, :],
+        color=color_filter,
+    )
 
-    # fig5 = plot_state_euclidean(
-    #     "gyro bias",
-    #     "filter",
-    #     ["bg_x", "bg_y", "bg_z"],
-    #     ts[idxs],
-    #     bg[idxs, :],
-    #     sigma_bg[idxs, :],
-    #     color=color_filter,
-    # )
+    fig5 = plot_state_euclidean(
+        "gyro bias",
+        "filter",
+        ["bg_x", "bg_y", "bg_z"],
+        ts[idxs],
+        bg[idxs, :],
+        sigma_bg[idxs, :],
+        color=color_filter,
+    )
     # plot integrated speed output
     # plot_state_euclidean(
     #     "position",
@@ -952,37 +967,38 @@ def run(args, dataset):
     # Plot the error in covariance
 
     meas_err_update = meas_update - ref_disp_update
-    # fig8 = plot_error_euclidean(
-    #     "displace measurement errors",
-    #     "meas-err",
-    #     ["x", "y", "z"],
-    #     ts_update,
-    #     meas_err_update,
-    #     meas_sigma_update,
-    # )
-    # plot_error_euclidean(
-    #     "displace measurement errors",
-    #     "pred-err",
-    #     ["x", "y", "z"],
-    #     ts_update,
-    #     pred_update - ref_disp_update,
-    #     meas_sigma_update,
-    # )
-    # for ax in fig8.axes:
-    #     ax.set_ylim([-0.5, 0.5])
+    fig8 = plot_error_euclidean(
+        "displace measurement errors",
+        "meas-err",
+        ["x", "y", "z"],
+        ts_update,
+        meas_err_update,
+        meas_sigma_update,
+    )
+    plot_error_euclidean(
+        "displace measurement errors",
+        "pred-err",
+        ["x", "y", "z"],
+        ts_update,
+        pred_update - ref_disp_update,
+        meas_sigma_update,
+    )
+    for ax in fig8.axes:
+        ax.set_ylim([-0.5, 0.5])
 
-    # # display measurement error autocorellation (SLOW)
-    # fig8b = plt.figure("autocorellation of measurement error")
-    # logging.warning("We assume update frequency at 20hz for autocorrelation")
-    # for i in range(3):
-    #     plt.subplot(3, 1, i + 1)
-    #     plt.acorr(meas_err_update[:, i], maxlags=100, lw=2)
-    #     locs, labels = plt.xticks()  # Get locations and labels
-    #     for (l, t) in zip(locs, labels):
-    #         t.set_text(str(l / 20.0) + "s")
-    #     plt.xticks(locs, labels)  # Set locations and labels
-    #     plt.xlim(left=0)
-    #     plt.grid()
+    # display measurement error autocorellation (SLOW)
+    fig8b = plt.figure("autocorellation of measurement error")
+    logging.warning("We assume update frequency at 20hz for autocorrelation")
+    for i in range(3):
+        plt.subplot(3, 1, i + 1)
+        # print(meas_err_update[:, i].shape)
+        plt.acorr(meas_err_update[:, i], maxlags=100, lw=2)
+        locs, labels = plt.xticks()  # Get locations and labels
+        for (l, t) in zip(locs, labels):
+            t.set_text(str(l / 20.0) + "s")
+        plt.xticks(locs, labels)  # Set locations and labels
+        plt.xlim(left=0)
+        plt.grid()
 
     fig9 = plot_error_euclidean(
         "position error",
@@ -1011,22 +1027,22 @@ def run(args, dataset):
         sigma_r[idxs, :],
     )
 
-    # fig12 = plot_error_euclidean(
-    #     "accel bias error",
-    #     ref_type,
-    #     ["ba_x", "ba_y", "ba_z"],
-    #     ts[idxs],
-    #     ba[idxs, :] - ref_ba[idxs, :],
-    #     sigma_ba[idxs, :],
-    # )
-    # fig13 = plot_error_euclidean(
-    #     "gyros bias error",
-    #     ref_type,
-    #     ["bg_x", "bg_y", "bg_z"],
-    #     ts[idxs],
-    #     bg[idxs, :] - ref_bg[idxs, :],
-    #     sigma_bg[idxs, :],
-    # )
+    fig12 = plot_error_euclidean(
+        "accel bias error",
+        ref_type,
+        ["ba_x", "ba_y", "ba_z"],
+        ts[idxs],
+        ba[idxs, :] - ref_ba[idxs, :],
+        sigma_ba[idxs, :],
+    )
+    fig13 = plot_error_euclidean(
+        "gyros bias error",
+        ref_type,
+        ["bg_x", "bg_y", "bg_z"],
+        ts[idxs],
+        bg[idxs, :] - ref_bg[idxs, :],
+        sigma_bg[idxs, :],
+    )
 
     if args.save_fig:
         if not save_vio_states:
@@ -1037,16 +1053,16 @@ def run(args, dataset):
                 fig1.savefig(osp.join(results_folder, "position." + save_as))
                 fig2.savefig(osp.join(results_folder, "velocity." + save_as))
                 fig3.savefig(osp.join(results_folder, "rotation." + save_as))
-                # fig4.savefig(osp.join(results_folder, "acc-bias." + save_as))
-                # fig5.savefig(osp.join(results_folder, "gyr-bias." + save_as))
+                fig4.savefig(osp.join(results_folder, "acc-bias." + save_as))
+                fig5.savefig(osp.join(results_folder, "gyr-bias." + save_as))
                 fig6.savefig(osp.join(results_folder, "innovation." + save_as))
                 fig7.savefig(osp.join(results_folder, "displacement." + save_as))
-                # fig8.savefig(osp.join(results_folder, "displacement-err." + save_as))
+                fig8.savefig(osp.join(results_folder, "displacement-err." + save_as))
                 fig9.savefig(osp.join(results_folder, "position-err." + save_as))
                 fig10.savefig(osp.join(results_folder, "velocity-err." + save_as))
                 fig11.savefig(osp.join(results_folder, "rotation-err." + save_as))
-                # fig12.savefig(osp.join(results_folder, "acc-bias-err." + save_as))
-                # fig13.savefig(osp.join(results_folder, "gyr-bias-err." + save_as))
+                fig12.savefig(osp.join(results_folder, "acc-bias-err." + save_as))
+                fig13.savefig(osp.join(results_folder, "gyr-bias-err." + save_as))
                 fig14.savefig(osp.join(results_folder, "position-2d." + save_as))
                 fig15.savefig(osp.join(results_folder, "position-3d." + save_as))
             # # also save as pickle just in case (TOO LARGE)

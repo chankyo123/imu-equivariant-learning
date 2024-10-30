@@ -74,13 +74,16 @@ def pose_integrate(args, dataset, preds, use_pred_vel, body_frame):
 
     ts = dataset.get_ts_last_imu_us() * 1e-6
     if body_frame:
-        r_gt, pos_gt, vel_body_gt = dataset.get_gt_traj_center_window_times(body_frame)
+        # r_gt, pos_gt, vel_body_gt = dataset.get_gt_traj_center_window_times(body_frame)
+        r_gt, pos_gt, vel_body_gt, r_gt_last = dataset.get_gt_traj_center_window_times(body_frame)
     else:
         r_gt, pos_gt = dataset.get_gt_traj_center_window_times(body_frame)
-        
+        vel_body_gt= np.zeros(pos_gt.shape)
     eul_gt = r_gt.as_euler("xyz", degrees=True)
-    rotation_matrices = r_gt.as_matrix() 
+    
     if body_frame:
+        # rotation_matrices = r_gt.as_matrix() 
+        rotation_matrices = r_gt_last.as_matrix() 
         if use_pred_vel:
             pred_vels_bd = preds   #body frame velocity
             pred_vels = np.einsum('ijk,ik->ij', rotation_matrices, pred_vels_bd)
@@ -95,8 +98,12 @@ def pose_integrate(args, dataset, preds, use_pred_vel, body_frame):
         
         vel_world_gt= vel_body_gt
     else:
-        dp_t = args.window_time
-        pred_vels = preds / dp_t
+        if use_pred_vel:
+            pred_vels = preds
+        else:
+            dp_t = args.window_time
+            pred_vels = preds / dp_t
+            
     #dts = np.mean(ts[ind_intg[1:]] - ts[ind_intg[:-1]])
     dts = np.mean(ts[1:] - ts[:-1])
     #pos_intg = np.zeros([pred_vels.shape[0] + 1, args.output_dim])
@@ -118,6 +125,10 @@ def pose_integrate(args, dataset, preds, use_pred_vel, body_frame):
         # displacement_intg = np.einsum('jk,ik->ij', R_z, displacement_intg)
     else:
         displacement_intg = np.cumsum(pred_vels[:, :] * dts, axis=0)
+        # print(pred_vels.shape)
+        # print(ts.shape)
+        # print(pos_gt.shape)
+        # assert False
             
     pos_intg =  displacement_intg+ pos_gt[0]
 
@@ -138,6 +149,8 @@ def pose_integrate(args, dataset, preds, use_pred_vel, body_frame):
         "pos_gt": pos_gt,
         "eul_pred": eul_pred,
         "eul_gt": eul_gt,
+        "vel_body_gt": vel_body_gt,
+        "vel_body_pred": pred_vels_bd,
     }
 
     return traj_attr_dict
@@ -154,6 +167,7 @@ def compute_metrics_and_plotting(args, net_attr_dict, traj_attr_dict, body_frame
     pos_gt = traj_attr_dict["pos_gt"]
     eul_pred = traj_attr_dict["eul_pred"]
     eul_gt = traj_attr_dict["eul_gt"]
+    vel_body_gt = traj_attr_dict["vel_body_gt"]
 
     preds = np.array(net_attr_dict["preds"])
     targets = np.array(net_attr_dict["targets"])
@@ -232,6 +246,7 @@ def compute_metrics_and_plotting(args, net_attr_dict, traj_attr_dict, body_frame
         "ts": ts,
         "pos_pred": pos_pred,
         "pos_gt": pos_gt,
+        "vel_body_gt": vel_body_gt,
         "pred_ts": pred_ts,
         "preds": net_attr_dict["preds"],
         "targets": net_attr_dict["targets"],
@@ -319,6 +334,7 @@ def make_plots(args, plot_dict, outdir, use_pred_vel):
     ts = plot_dict["ts"]
     pos_pred = plot_dict["pos_pred"]
     pos_gt = plot_dict["pos_gt"]
+    vel_body_gt = plot_dict["vel_body_gt"]
     pred_ts = plot_dict["pred_ts"]
     preds = plot_dict["preds"]
     targets = plot_dict["targets"]
@@ -345,8 +361,10 @@ def make_plots(args, plot_dict, outdir, use_pred_vel):
     for i, label in enumerate(["x", "y", "z"]):
         # axs[i, 0].plot(preds_vel[:, i], color='red', label='Predicted')
         # axs[i, 0].plot(targets_vel[:, i], color='blue', label='Ground truth')
-        axs[i, 0].plot(preds[:, i], color='red', label='Predicted')
-        axs[i, 0].plot(targets[:, i], color='blue', label='Ground truth')
+        
+        # axs[i, 0].plot(preds[:, i], color='red', label='Predicted')
+        # axs[i, 0].plot(targets[:, i], color='blue', label='Ground truth')
+        axs[i, 0].plot(np.abs(preds[:, i] - targets[:, i]), color='orange', label='Vel : pred - gt')
         
         axs[i, 0].set_title(f"Velocity {label} vs Time")
         axs[i, 0].set_xlabel("Time")
@@ -356,7 +374,8 @@ def make_plots(args, plot_dict, outdir, use_pred_vel):
 
     # Plot time vs covariance in the right column
     for i, label in enumerate(["x", "y", "z"]):
-        axs[i, 1].plot(preds_cov[:, i], color='green', label='Covariance')
+        # axs[i, 1].plot(preds_cov[:, i], color='green', label='Covariance')
+        axs[i, 1].plot(np.exp(2 * preds[:, i]), color='green', label='Covariance')
         axs[i, 1].set_title(f"Covariance {label} vs Time")
         axs[i, 1].set_xlabel("Time")
         axs[i, 1].set_ylabel(f"Covariance {label}")
@@ -371,7 +390,7 @@ def make_plots(args, plot_dict, outdir, use_pred_vel):
     print("fig0 saved!")
     
     fig1 = plt.figure(num="prediction vs gt", dpi=dpi, figsize=figsize)
-    if use_pred_vel: 
+    if True: 
         targ_names = ["vel_x", "vel_y", "vel_z"]
     else:
         targ_names = ["dx", "dy", "dz"]
@@ -503,7 +522,7 @@ def torch_to_numpy(torch_arr):
     return torch_arr.cpu().detach().numpy()
 
 
-def get_inference(network, data_loader, device, epoch, body_frame_3regress, transforms=[]):
+def get_inference(network, data_loader, device, epoch, body_frame_3regress, body_frame, transforms=[]):
     """
     Obtain attributes from a data loader given a network state
     Outputs all targets, predicts, predicted covariance params, and losses in numpy arrays
@@ -536,16 +555,30 @@ def get_inference(network, data_loader, device, epoch, body_frame_3regress, tran
         # rotated_gyroscope_data = torch.matmul(rotation_matrix, gyroscope_data)
         # rotated_gyroscope_data = rotated_gyroscope_data.reshape(rotated_gyroscope_data.size(0), feat.size(0), feat.size(2))
         # rotated_gyroscope_data = rotated_gyroscope_data.permute(1,0,2)
+        
         if body_frame_3regress : 
             pred, pred_cov, pred_vel = network(feat)
-            targ_vel = sample["vel_Body"][:,-1,:]
+            if not body_frame :
+                targ_vel = sample["vel_World"][:,-1,:]
+                # print("here")
+            else : 
+                targ_vel = sample["vel_Body"][:,-1,:]
         else:
             pred, pred_cov = network(feat)
-            pred_vel = pred
-            targ_vel =torch.zeros_like(pred_vel)
-
-        targ = sample["targ_dt_World"][:,-1,:]
-        
+            pred_vel = pred.clone()
+            if body_frame : 
+                # targ_vel =torch.zeros_like(pred_vel)
+                targ_vel = sample["vel_Body"][:,-1,:]
+                targ = sample["vel_Body"][:,-1,:]
+                # targ_vel = sample["targ_dt_Body"][:,-1,:]
+                # targ = sample["targ_dt_Body"][:,-1,:]
+                
+                # #using gt
+                # targ = sample["targ_dt_World"][:,-1,:]
+            else:
+                targ = sample["targ_dt_World"][:,-1,:]
+                targ_vel= targ.clone()
+                
         # Only grab the last prediction in this case
         if len(pred.shape) == 3:
             pred = pred[:,:,-1]
@@ -722,23 +755,31 @@ def net_test(args):
         # body_frame_3regress = False
         # body_frame = False
         
-        use_pred_vel = eval(args.body_frame)
         if "3res" in args.model_path:
+        # if "res_3res" in args.model_path:
             print("we regress 2 value!!")
             body_frame_3regress = False
+        elif "/res" in args.out_dir or "resnet" in args.out_dir or "/eq_" in args.out_dir or "/vn_" in args.out_dir or "/ln_" in args.out_dir:
+            body_frame_3regress = False
         else:
-            body_frame_3regress = eval(args.body_frame)
+            body_frame_3regress = True
         # body_frame_3regress = False
         body_frame = eval(args.body_frame)
+        if "disp" not in args.out_dir:
+            use_pred_vel = True
+        else:
+            use_pred_vel = False
+            
         # Obtain trajectory
         start_t = time.time()
         
         test_transforms = []
         # ##UNCOMMENT IF WANT TO ADD BIAS IN TEST DATASET
         # test_transforms = seq_dataset.get_test_transforms_bodyframe() 
+        # # assert False
         # ##UNCOMMENT IF WANT TO ADD BIAS IN TEST DATASET
         
-        net_attr_dict = get_inference(network, seq_loader, device, epoch=50, body_frame_3regress = body_frame_3regress, transforms = test_transforms)
+        net_attr_dict = get_inference(network, seq_loader, device, epoch=50, body_frame_3regress = body_frame_3regress, body_frame = body_frame, transforms = test_transforms)
         end_t = time.time()
         mem_used_max_GB = torch.cuda.max_memory_allocated() / (1024*1024*1024)
         torch.cuda.reset_peak_memory_stats()
@@ -766,6 +807,7 @@ def net_test(args):
                 traj_attr_dict["ts"].reshape(-1, 1),
                 traj_attr_dict["pos_pred"],
                 traj_attr_dict["pos_gt"],
+                traj_attr_dict["vel_body_pred"],
             ],
             axis=1,
         )

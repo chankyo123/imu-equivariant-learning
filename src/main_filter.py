@@ -157,6 +157,8 @@ if __name__ == "__main__":
         data_list = os.path.join(args.root_dir, "test_list3.txt")
     elif args.run_data == "4":
         data_list = os.path.join(args.root_dir, "test_list4.txt")
+    elif args.run_data == "5":
+        data_list = os.path.join(args.root_dir, "test_list5.txt")
     print("data_list : ", data_list)
     with open(data_list) as f:
         data_names = [

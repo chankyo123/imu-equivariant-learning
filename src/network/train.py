@@ -45,16 +45,20 @@ def get_inference(network, data_loader, device, epoch, body_frame_3regress = Fal
             # print(feat.shape, pred.shape, pred_cov.shape)
         else:
             pred, pred_cov = network(feat)
-            pred_vel = pred
+            pred_vel = pred.clone()
         
         if len(pred.shape) == 2:
             targ = sample["targ_dt_World"][:,-1,:]
             if body_frame: 
                 # print("body frame is running in inference!!")
                 targ_vel = sample["vel_Body"][:,-1,:]
-                targ = targ_vel
+                targ = sample["vel_Body"][:,-1,:]
+                # print("Jere!!!!")
+                # targ_vel = sample["targ_dt_Body"][:,-1,:]
+                # targ = sample["targ_dt_Body"][:,-1,:]
             else:
-                targ_vel = sample["vel_World"][:,-1,:]
+                # targ_vel = sample["vel_World"][:,-1,:]
+                targ_vel = sample["targ_dt_World"][:,-1,:]
         else:
             # Leave off zeroth element since it's 0's. Ex: Net predicts 199 if there's 200 GT
             targ = sample["targ_dt_World"][:,1:,:].permute(0,2,1)
@@ -111,66 +115,66 @@ def do_train(network, train_loader, device, epoch, optimizer, input_dim, transfo
             sample = transform(sample)
         feat = sample["feats"]["imu0"]
         optimizer.zero_grad()
-        if bid <6 and (epoch< 11 or epoch>=90):
+        if bid <6 and (epoch< 11 or (epoch <= 100 and epoch>=90) or (epoch <=200 and epoch >= 190)):
             print('bid = ', bid)
             
-        # # >>> SO(3) Equivariance Check
-        # rotation_matrix = np.array([[0.1097, 0.1448, 0.9834],[0.8754, -0.4827, -0.0266],[0.4708, 0.8637, -0.1797]])
-        # rotation_matrix = torch.from_numpy(rotation_matrix).to('cuda').to(torch.float32)
-        # accelerometer_data = feat[:, :3,:].to(torch.float32)
-        # accelerometer_data = accelerometer_data.permute(1,0,2).reshape(3,-1)
-        # gyroscope_data = feat[:, 3:6, :].to(torch.float32)
-        # gyroscope_data = gyroscope_data.permute(1,0,2).reshape(3,-1)
-        # if input_dim in (9, 18):
-        #     vel_data = feat[:, 6:9, :].to(torch.float32)
-        #     vel_data = vel_data.permute(1,0,2).reshape(3,-1)
-        #     if input_dim == 18:
-        #         ori_data_1 = feat[:, 9:12, :].to(torch.float32)
-        #         ori_data_2 = feat[:, 12:15, :].to(torch.float32)
-        #         ori_data_3 = feat[:, 15:18, :].to(torch.float32)
-        #         ori_data_1 = ori_data_1.permute(1,0,2).reshape(3,-1)
-        #         ori_data_2 = ori_data_2.permute(1,0,2).reshape(3,-1)
-        #         ori_data_3 = ori_data_3.permute(1,0,2).reshape(3,-1)
+        # >>> SO(3) Equivariance Check
+        rotation_matrix = np.array([[0.1097, 0.1448, 0.9834],[0.8754, -0.4827, -0.0266],[0.4708, 0.8637, -0.1797]])
+        rotation_matrix = torch.from_numpy(rotation_matrix).to('cuda').to(torch.float32)
+        accelerometer_data = feat[:, :3,:].to(torch.float32)
+        accelerometer_data = accelerometer_data.permute(1,0,2).reshape(3,-1)
+        gyroscope_data = feat[:, 3:6, :].to(torch.float32)
+        gyroscope_data = gyroscope_data.permute(1,0,2).reshape(3,-1)
+        if input_dim in (9, 18):
+            vel_data = feat[:, 6:9, :].to(torch.float32)
+            vel_data = vel_data.permute(1,0,2).reshape(3,-1)
+            if input_dim == 18:
+                ori_data_1 = feat[:, 9:12, :].to(torch.float32)
+                ori_data_2 = feat[:, 12:15, :].to(torch.float32)
+                ori_data_3 = feat[:, 15:18, :].to(torch.float32)
+                ori_data_1 = ori_data_1.permute(1,0,2).reshape(3,-1)
+                ori_data_2 = ori_data_2.permute(1,0,2).reshape(3,-1)
+                ori_data_3 = ori_data_3.permute(1,0,2).reshape(3,-1)
                 
-        # rotated_accelerometer_data = torch.matmul(rotation_matrix, accelerometer_data)
-        # rotated_accelerometer_data = rotated_accelerometer_data.reshape(rotated_accelerometer_data.size(0), feat.size(0), feat.size(2))
-        # rotated_accelerometer_data = rotated_accelerometer_data.permute(1,0,2)
-        # rotated_gyroscope_data = torch.matmul(rotation_matrix, gyroscope_data)
-        # rotated_gyroscope_data = rotated_gyroscope_data.reshape(rotated_gyroscope_data.size(0), feat.size(0), feat.size(2))
-        # rotated_gyroscope_data = rotated_gyroscope_data.permute(1,0,2)
-        # if input_dim in (9, 18):
-        #     rotated_vel_data = torch.matmul(rotation_matrix, vel_data)
-        #     rotated_vel_data = rotated_vel_data.reshape(rotated_vel_data.size(0), feat.size(0), feat.size(2))
-        #     rotated_vel_data = rotated_vel_data.permute(1,0,2)
-        #     if input_dim == 18:
-        #         rotated_ori_data1 = torch.matmul(rotation_matrix, ori_data_1)
-        #         rotated_ori_data2 = torch.matmul(rotation_matrix, ori_data_2)
-        #         rotated_ori_data3 = torch.matmul(rotation_matrix, ori_data_3)
-        #         rotated_ori_data1 = rotated_ori_data1.reshape(rotated_ori_data1.size(0), feat.size(0), feat.size(2))
-        #         rotated_ori_data1 = rotated_ori_data1.permute(1,0,2)
-        #         rotated_ori_data2 = rotated_ori_data2.reshape(rotated_ori_data2.size(0), feat.size(0), feat.size(2))
-        #         rotated_ori_data2 = rotated_ori_data2.permute(1,0,2)
-        #         rotated_ori_data3 = rotated_ori_data3.reshape(rotated_ori_data3.size(0), feat.size(0), feat.size(2))
-        #         rotated_ori_data3 = rotated_ori_data3.permute(1,0,2)
+        rotated_accelerometer_data = torch.matmul(rotation_matrix, accelerometer_data)
+        rotated_accelerometer_data = rotated_accelerometer_data.reshape(rotated_accelerometer_data.size(0), feat.size(0), feat.size(2))
+        rotated_accelerometer_data = rotated_accelerometer_data.permute(1,0,2)
+        rotated_gyroscope_data = torch.matmul(rotation_matrix, gyroscope_data)
+        rotated_gyroscope_data = rotated_gyroscope_data.reshape(rotated_gyroscope_data.size(0), feat.size(0), feat.size(2))
+        rotated_gyroscope_data = rotated_gyroscope_data.permute(1,0,2)
+        if input_dim in (9, 18):
+            rotated_vel_data = torch.matmul(rotation_matrix, vel_data)
+            rotated_vel_data = rotated_vel_data.reshape(rotated_vel_data.size(0), feat.size(0), feat.size(2))
+            rotated_vel_data = rotated_vel_data.permute(1,0,2)
+            if input_dim == 18:
+                rotated_ori_data1 = torch.matmul(rotation_matrix, ori_data_1)
+                rotated_ori_data2 = torch.matmul(rotation_matrix, ori_data_2)
+                rotated_ori_data3 = torch.matmul(rotation_matrix, ori_data_3)
+                rotated_ori_data1 = rotated_ori_data1.reshape(rotated_ori_data1.size(0), feat.size(0), feat.size(2))
+                rotated_ori_data1 = rotated_ori_data1.permute(1,0,2)
+                rotated_ori_data2 = rotated_ori_data2.reshape(rotated_ori_data2.size(0), feat.size(0), feat.size(2))
+                rotated_ori_data2 = rotated_ori_data2.permute(1,0,2)
+                rotated_ori_data3 = rotated_ori_data3.reshape(rotated_ori_data3.size(0), feat.size(0), feat.size(2))
+                rotated_ori_data3 = rotated_ori_data3.permute(1,0,2)
         
-        # if input_dim in (9, 18):
-        #     feat_rot = torch.cat((rotated_accelerometer_data, rotated_gyroscope_data, rotated_vel_data), dim=1)
-        #     if input_dim == 18:
-        #         feat_rot = torch.cat((rotated_accelerometer_data, rotated_gyroscope_data, rotated_vel_data, rotated_ori_data1, rotated_ori_data2, rotated_ori_data3), dim=1)
-        # else:
-        #     feat_rot = torch.cat((rotated_accelerometer_data, rotated_gyroscope_data), dim=1)
-        # # <<< SO(3) Equivariance Check
+        if input_dim in (9, 18):
+            feat_rot = torch.cat((rotated_accelerometer_data, rotated_gyroscope_data, rotated_vel_data), dim=1)
+            if input_dim == 18:
+                feat_rot = torch.cat((rotated_accelerometer_data, rotated_gyroscope_data, rotated_vel_data, rotated_ori_data1, rotated_ori_data2, rotated_ori_data3), dim=1)
+        else:
+            feat_rot = torch.cat((rotated_accelerometer_data, rotated_gyroscope_data), dim=1)
+        # <<< SO(3) Equivariance Check
         
-        if body_frame_3regress: 
+        if body_frame_3regress:
             pred, pred_cov, pred_vel = network(feat)
         else:
             pred, pred_cov= network(feat)
-            pred_vel = pred
-
-        # if body_frame_3regress: 
-        #     pred_rot, pred_cov_rot, pred_vel_rot = network(feat_rot)
-        # else:
-        #     pred_rot, pred_cov_rot = network(feat_rot)
+            pred_vel = pred.clone()
+            
+        if body_frame_3regress: 
+            pred_rot, pred_cov_rot, pred_vel_rot = network(feat_rot)
+        else:
+            pred_rot, pred_cov_rot = network(feat_rot)
         # # print(torch.matmul(pred_vel,rotation_matrix)[:3,:3])
         # # print(pred_vel_rot[:3,:3])
         # # print()
@@ -180,9 +184,16 @@ def do_train(network, train_loader, device, epoch, optimizer, input_dim, transfo
             if body_frame:
                 # print("body frame is running in training!!")
                 targ_vel = sample["vel_Body"][:,-1,:]
-                targ = targ_vel
+                targ = sample["vel_Body"][:,-1,:]
+                # print("Jere!!")
+                # targ_vel = sample["targ_dt_Body"][:,-1,:]
+                # targ = sample["targ_dt_Body"][:,-1,:]
             else:
-                targ_vel = sample["vel_World"][:,-1,:]
+                # 1. learn vel
+                # targ_vel = sample["vel_World"][:,-1,:]
+                # 2. learn disp
+                targ_vel = sample["targ_dt_World"][:,-1,:]
+                targ = sample["vel_Body"][:,-1,:]
         else:
             # Leave off zeroth element since it's 0's. Ex: Net predicts 199 if there's 200 GT
             targ = sample["targ_dt_World"][:,1:,:].permute(0,2,1)
@@ -430,8 +441,10 @@ def net_train(args):
     if "3res" in args.out_dir:
         print("we regress 2 value!!")
         body_frame_3regress = False
+    elif "/res" in args.out_dir or "resnet" in args.out_dir or "/eq_" in args.out_dir or "/vn_" in args.out_dir or "/ln_" in args.out_dir:
+        body_frame_3regress = False
     else:
-        body_frame_3regress = eval(args.body_frame)
+        body_frame_3regress = True
     if not body_frame: 
         train_transforms = data.get_train_transforms()
     else:
@@ -467,9 +480,11 @@ def net_train(args):
     logging.info(f'Network "{args.arch}" loaded to device {device}')
     logging.info(f"Total number of parameters: {total_params}")
 
-    optimizer = torch.optim.Adam(network.parameters(), args.lr)
+    # optimizer = torch.optim.Adam(network.parameters(), args.lr)
+    optimizer = torch.optim.AdamW(network.parameters(), lr=args.lr, weight_decay=5e-4)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, factor=0.1, patience=10, verbose=True, eps=1e-12
+        # optimizer, factor=0.1, patience=10, verbose=True, eps=1e-12
+        optimizer, factor=0.2, patience=10, verbose=True, eps=1e-12
     )
     logging.info(f"Optimizer: {optimizer}, Scheduler: {scheduler}")
 
@@ -545,10 +560,11 @@ def net_train(args):
             if np.mean(val_attr_dict["losses"]) < best_val_loss:
                 best_val_loss = np.mean(val_attr_dict["losses"])
                 save_model(args, epoch, network, optimizer, best=True)
+            scheduler.step(np.mean(val_attr_dict["losses"]))
         else:
             save_model(args, epoch, network, optimizer, best=False)
             
-        if epoch in {8,9,19,49, 80, 90, 95, 96, 98, 99, 109, 119, 129, 149, 159, 179, 189, 195, 199}:
+        if epoch in {8,9,19,49, 80, 90, 95, 96, 98, 99, 109, 119, 129, 149, 159, 179, 189, 195, 199, 209,219,229,239,249,259,269,299, 399}:
             save_model(args, epoch, network, optimizer, best=False, interrupt=False)
     
     mean_epoch_time = np.mean(consumed_times)

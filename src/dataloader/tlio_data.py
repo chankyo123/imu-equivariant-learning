@@ -215,6 +215,12 @@ class TlioData:
                 TransformAddNoiseBias(self.data_window_config["input_sensors"],
                     **self.augmentation_options["bias_shift_options"])
             )
+            
+        if self.augmentation_options["perturb_gravity"]:
+            transforms.append(
+                TransformPerturbGravity(self.data_window_config["input_sensors"], 
+                    self.augmentation_options["perturb_gravity_theta_range"])
+            )
 
         return transforms
     

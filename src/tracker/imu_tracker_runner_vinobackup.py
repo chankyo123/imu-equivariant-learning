@@ -14,6 +14,7 @@ from utils.dotdict import dotdict
 from utils.logging import logging
 
 import re
+import time
 
 class ImuTrackerRunner:
     """
@@ -52,6 +53,7 @@ class ImuTrackerRunner:
 
         if "sim" not in args.root_dir:
             imu_calib = ImuCalib.from_offline_calib(dataset, args)
+            self.imu_calib = imu_calib
         else:
             imu_calib = None
 
@@ -127,7 +129,6 @@ class ImuTrackerRunner:
             use_riekf = eval(args.use_riekf),
             input_3 = eval(args.input_3),
             out_dir = args.out_dir,
-            outdir = outdir,
         )
 
         # output
@@ -211,31 +212,68 @@ class ImuTrackerRunner:
 
         # Loop through the entire dataset and feed the data to the imu tracker
         n_data = self.input.dataset_size
-        for i in progressbar.progressbar(range(n_data), redirect_stdout=True):
+        start_index = int(0.1 * n_data)
+        end_index = int(0.95 * n_data)
+        vio_data = np.load(self.vio_path)
+        
+        if "short_seq" in self.outfile :
+            imu_range = range(start_index, end_index)
+        else:
+            imu_range = range(n_data)
+            
+        for i in progressbar.progressbar(imu_range, redirect_stdout=True):
+
+            start_time = time.time()
+            debug_time = 0
+            process_time = 0
+            vis_time = 0
+            init_time = 0
+            
+            # print("i/n : ", i/n_data * 100)
             # obtain next raw IMU measurement from data loader
             ts, acc_raw, gyr_raw = self.input.get_datai(i)
+            # print(ts.shape, acc_raw.shape)        (1), (3,1)
+            # assert False
             t_us = int(ts * 1e6)
-            vio_data = np.load(self.vio_path)
+            
+            get_data_time = time.time() - start_time
+            
             # if "comp" in self.outfile :
             #     use_gravity_comp_csv = True
             # else:
             #     use_gravity_comp_csv = False
             
             # if use_gravity_comp_csv:
+            #     if ts < self.input.vio_ts[0]:
+            #             continue
+
             #     time_gt = vio_data[:, 0]
             #     qxyzw_World_Device = vio_data[:, -10:-6]
             #     # interp_funcs_quaternion = [interp1d(time_gt, qxyzw_World_Device[:, i], fill_value="extrapolate") for i in range(qxyzw_World_Device.shape[1])]
-            #     interp_funcs_quaternion = [interp1d(time_gt, qxyzw_World_Device[:, i], fill_value=(qxyzw_World_Device[0, i], qxyzw_World_Device[-1, i]), bounds_error=False) for i in range(qxyzw_World_Device.shape[1])]
-            #     # interp_funcs_quaternion = [interp1d(time_gt, qxyzw_World_Device[:, i], bounds_error=False) for i in range(qxyzw_World_Device.shape[1])]
+            #     # interp_funcs_quaternion = [interp1d(time_gt, qxyzw_World_Device[:, i], fill_value=(qxyzw_World_Device[0, i], qxyzw_World_Device[-1, i]), bounds_error=False) for i in range(qxyzw_World_Device.shape[1])]
+            #     interp_funcs_quaternion = [interp1d(time_gt, qxyzw_World_Device[:, i]) for i in range(qxyzw_World_Device.shape[1])]
 
             #     quaternion_gt = np.array([interp_func(t_us) for interp_func in interp_funcs_quaternion])
             #     quaternion_gt = quaternion_gt / np.linalg.norm(quaternion_gt)
             #     R_gt = Rotation.from_quat(quaternion_gt).as_matrix()  # bd -> world
             #     g_world = np.array([0, 0, 9.81]).reshape(-1,1)
             #     R_gt = R_gt.T
-            #     acc_raw = acc_raw - R_gt.T @ g_world
+            #     acc_body = R_gt.T @ g_world
+                
+            #     # ## apply calibration in gravity ##
+            #     # gyro_body = np.zeros((3,1))
+            #     # # print("acc_body : ", acc_body)
+            #     # acc_body, _ = self.imu_calib.calibrate_raw(acc_body, gyro_body)
+            #     # # print("acc_body_cal : ", acc_body)
+            #     # ## apply calibration in gravity ##
+                
+            #     acc_raw = acc_raw - acc_body
+                
             # cheat a bit with filter state in case for debugging
             if args.debug_using_vio_ba:
+                
+                debug_start_time = time.time()
+                
                 vio_ba = interp1d(self.input.vio_calib_ts, self.input.vio_ba, axis=0)(
                     ts
                 )
@@ -244,16 +282,24 @@ class ImuTrackerRunner:
                 )
                 self.tracker.filter.state.s_ba = np.atleast_2d(vio_ba).T
                 self.tracker.filter.state.s_bg = np.atleast_2d(vio_bg).T
+                
+                debug_time = time.time() - debug_start_time
 
             if self.tracker.filter.initialized:
+                
+                process_start_time = time.time()
+                
                 progress = i / n_data
                 did_update = self.tracker.on_imu_measurement(t_us, gyr_raw, acc_raw, iter_num, progress)
+                process_time = time.time() - process_start_time
                 self.add_data_to_be_logged(
                     ts,
                     self.tracker.last_acc_before_next_interp_time,  # beware when imu drops, it might not be what you want here
                     self.tracker.last_gyr_before_next_interp_time,  # beware when imu drops, it might not be what you want here
                     with_update=did_update,
                 )
+                
+                
                 if i % 100 == 0 and self.visualizer is not None:
                     T_World_Imu = np.eye(4)
                     T_World_Imu[:3,:3] = self.tracker.filter.state.s_R
@@ -263,7 +309,13 @@ class ImuTrackerRunner:
                         {"tlio": T_World_Imu},    
                         {"tlio": [T_World_Imu[:3,3]]},    
                     )
+                    
+                    vis_time = time.time() - vis_start_time
+                    
             else:
+                
+                init_start_time = time.time()
+                
                 # initialize to gt state R,v,p and offline calib
                 if not eval(args.initialize_with_vio):
                     self.tracker.on_imu_measurement(t_us, gyr_raw, acc_raw)
@@ -279,6 +331,7 @@ class ImuTrackerRunner:
 
                     if ts < self.input.vio_ts[0]:
                         continue
+                    print(ts)
                     vio_p = interp1d(self.input.vio_ts, self.input.vio_p, axis=0)(ts)
                     vio_v = interp1d(self.input.vio_ts, self.input.vio_v, axis=0)(ts)
                     vio_eul = interp1d(self.input.vio_ts, self.input.vio_eul, axis=0)(
@@ -304,19 +357,19 @@ class ImuTrackerRunner:
                         init_ba,
                         init_bg,
                     )
-
+                    
+                init_time = time.time() - init_start_time
+            # print(f"Iteration {i}: get_data_time={get_data_time:.4f}s, "
+            #         f"vis_time={vis_time:.4f}s, init_time={init_time:.4f}s, "
+            #         f"debug_time={debug_time:.4f}s, process_time={process_time:.4f}s")
+            
         self.f_state.close()
         self.f_debug.close()
-        self.tracker.meas_vel.close()
         if args.save_as_npy:
             # actually convert the .txt to npy to be more storage friendly
             states = np.loadtxt(self.outfile, delimiter=",")
             np.save(self.outfile + ".npy", states)
             os.remove(self.outfile)
-            
-            vel_states = np.loadtxt(self.tracker.vel_outfile, delimiter=",")
-            np.save(self.tracker.vel_outfile + ".npy", vel_states)
-            os.remove(self.tracker.vel_outfile)
 
     def scale_raw_dynamic(self, t, acc, gyr):
         """ This scale with gt data, for debug purpose only"""

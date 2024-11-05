@@ -490,8 +490,8 @@ def net_train(args):
     logging.info(f'Network "{args.arch}" loaded to device {device}')
     logging.info(f"Total number of parameters: {total_params}")
 
-    optimizer = torch.optim.Adam(network.parameters(), args.lr)
-    # optimizer = torch.optim.AdamW(network.parameters(), lr=args.lr, weight_decay=5e-4)
+    # optimizer = torch.optim.Adam(network.parameters(), args.lr)
+    optimizer = torch.optim.AdamW(network.parameters(), lr=args.lr, weight_decay=5e-4)
 
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         # optimizer, factor=0.1, patience=10, verbose=True, eps=1e-12

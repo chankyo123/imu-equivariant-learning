@@ -40,6 +40,7 @@ from network.ln_conv_2regress_nochannelmix_slope_1 import LN_BasicBlock1D, SO3Eq
 # from network.model_vn_resnet_2 import VN_BasicBlock1D, VN_ResNet1D
 
 from network.model_resnet import BasicBlock1D, ResNet1D
+# from network.model_resnet_1res_nodrop import BasicBlock1D, ResNet1D
 
 
 # from network.model_resnet_2res_nodrop import BasicBlock1D, ResNet1D
@@ -55,6 +56,14 @@ def get_model(arch, net_config, input_dim=6, output_dim=3, close_loop = False):
         network = ResNet1D(
             BasicBlock1D, input_dim, output_dim, [2, 2, 2, 2], net_config["in_dim"]
         )
+    elif arch == "resnet18":
+        _input_channel, _output_channel = 6, 3
+        _fc_config = {'fc_dim': 512, 'in_dim': 7, 'dropout': 0.5, 'trans_planes': 128}
+        from network.resnet18 import ResNet1D as ResNet1D18
+        from network.resnet18 import FCOutputModule as FCOutputModule18
+        from network.resnet18 import BasicBlock1D as BasicBlock1D18
+        network = ResNet1D18(_input_channel, _output_channel, BasicBlock1D18, [2, 2, 2, 2],
+                           base_plane=64, output_block=FCOutputModule18, kernel_size=3, **_fc_config)
     elif arch == "vn_resnet":
         if close_loop:
             network = VN_ResNet1D_cl(

@@ -1,0 +1,14 @@
+{
+    "columns_name(width)": [
+        "ts_us(1)",
+        "gyr_compensated_rotated_in_World(3)",
+        "acc_compensated_rotated_in_World(3)",
+        "qxyzw_World_Device(4)",
+        "pos_World_Device(3)",
+        "vel_Body(3)"
+    ],
+    "num_rows": 16859,
+    "approximate_frequency_hz": 200.0,
+    "t_start_us": 3389337325153942.0,
+    "t_end_us": 3389420793917120.0
+}

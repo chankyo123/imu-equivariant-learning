@@ -164,6 +164,9 @@ def compute_metrics_and_plotting(args, net_attr_dict, traj_attr_dict, body_frame
     targets = np.array(net_attr_dict["targets"])
     preds_vel = np.array(net_attr_dict["preds_vel"])
     targets_vel =  np.array(net_attr_dict["targets_vel"])
+
+
+    
     
     # get RMSE
     rmse = np.sqrt(np.mean(np.linalg.norm(pos_pred - pos_gt, axis=1) ** 2))
@@ -791,6 +794,25 @@ def net_test(args):
         )
         np.savetxt(outfile, trajectory_data, delimiter=",")
 
+        # ###transform body to world for velocity sanity check
+        # ts = seq_dataset.get_ts_last_imu_us() * 1e-6
+        # if body_frame:
+        #     # r_gt, pos_gt, vel_body_gt = dataset.get_gt_traj_center_window_times(body_frame)
+        #     r_gt, pos_gt, vel_body_gt, r_gt_last = seq_dataset.get_gt_traj_center_window_times(body_frame)
+        # else:
+        #     r_gt, pos_gt = seq_dataset.get_gt_traj_center_window_times(body_frame)
+            
+        # eul_gt = r_gt.as_euler("xyz", degrees=True)
+        # if body_frame:
+        #     rotation_matrices = r_gt_last.as_matrix() 
+        # else:
+        #     rotation_matrices = r_gt.as_matrix() 
+            
+        # if body_frame:
+        #     net_attr_dict["preds_vel"] = np.einsum('ijk,ik->ij', rotation_matrices, net_attr_dict["preds_vel"])
+        #     net_attr_dict["targets_vel"] = np.einsum('ijk,ik->ij', rotation_matrices, net_attr_dict["targets_vel"])
+        # ###
+        
         # obtain metrics
         metrics, plot_dict = compute_metrics_and_plotting(
             args, net_attr_dict, traj_attr_dict, body_frame

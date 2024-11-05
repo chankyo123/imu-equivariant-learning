@@ -199,6 +199,7 @@ json_file = "batch_test_outputs/ln_conv_last_align_notcomp_2regress_nochannelmix
 json_file = "batch_test_outputs_so3/ln_conv_last_align_notcomp_2regress_nochannelmix_slope_1_mselss_lessbias/metrics.json"   #  2.3303871795/ 2.7389335 /1.1971992
 json_file = "batch_test_outputs/ln_conv_last_align_notcomp_2regress_nochannelmix_slope_1_onechannelmix_mselss_lessbias_2/metrics.json"   #  2.81081/ 3.207540 /1.433300
 json_file = "batch_test_outputs/ln_conv_last_align_notcomp_2regress_nochannelmix_slope_1_mselss_lessbias_2/metrics.json"   #  2.273992041
+json_file = "batch_test_outputs/RONIN_resnet/metrics.json"   #  2.273992041
 
 # json_file = "batch_test_outputs/models-resnet/metrics.json"   # 2.8645704/ 1.51938
 
@@ -293,7 +294,7 @@ for key, value in data.items():
             rmse_vel_value = filter_dict.get("rpe_rmse_1000")
         else:
             rmse_value = filter_dict.get("rmse")
-            rmse_vel_value = filter_dict.get("rpe")
+            rmse_vel_value = filter_dict.get("rmse_vel")
         
         if ate_value is not None:
             ate_values.append(ate_value)

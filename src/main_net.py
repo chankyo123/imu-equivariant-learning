@@ -80,6 +80,18 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     ###########################################################
+    ### for debugging ###
+    ###########################################################
+    # args.mode = "train"
+    # args.root_dir = "local_data_bodyframe/RIDI/"
+    # args.out_dir = "models_mlp/RIDI_resnet_18/"
+    # args.epochs = 300
+    # args.arch = "resnet18"
+    # args.input_dim = 6
+    # args.body_frame = "True"
+    
+
+    ###########################################################
     # Main
     ###########################################################
     if args.mode == "train":

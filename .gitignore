@@ -11,3 +11,6 @@ venv
 models_mlp
 models_eq
 # local_data_bodyframe
+Euroc/
+Ronin/
+TUM/

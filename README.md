@@ -1,5 +1,10 @@
 # IMU Equivariant Learning: A yaw-Equivariant Network-Coupled Inertial Odometry
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python](https://img.shields.io/badge/python-blue.svg)](https://www.python.org/)
+
+> **🚨 Update (April 2026):** We are actively developing **[EqVIO](https://github.com/chankyo123/EqVIO)**, an extended Equivariant Visual-Inertial Odometry pipeline that builds upon the core network architecture introduced in this repository. If you are interested in our latest full VIO formulations, please check out the new repository!
+
 Created by Chankyo Kim, Tzu-Yuan Lin, Minghan Zhu, and <a href="https://curly.engin.umich.edu/people#h.7jd25w55csv" target="_blank">Maani Ghaffari</a>.
 
 ## Overview

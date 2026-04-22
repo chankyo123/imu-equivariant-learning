@@ -104,12 +104,21 @@ json_file = "batch_test_outputs/idso3_eq_2res_200hz_3input_mselss_0.5_pertb_ep_m
 json_file = "batch_test_outputs/eq_2res_200hz_3input_mselss_0.5_pertb_ep200/metrics.json"   #2.813362 / 3.060839  <---- 이게 제일 좋은듯
 # json_file = "batch_test_outputs/eq_2res_200hz_3input_mselss_nodetach/metrics.json"   #5.0732262 / 5.71939  <---- 이게 제일 좋은듯
 
+json_file = "../EqNIO/models/tlio_o2/test/metrics.json"   # 9.7277191
+json_file = "../EqNIO/models/tlio_o2/test_rpe1/metrics.json"   #5.511
 
+json_file = "batch_test_outputs/comp_nolastalign_lessbias_0.5_mselss_ln_2regress_slope1/metrics.json"   #2.349 / 3.060839  <---- 이게 제일 좋은듯
+json_file = "batch_test_outputs/comp_nolastalign_lessbias_0.2_mselss_ln_2regress_slope1/metrics.json"   #2.3300 / 3.060839  <---- 이게 제일 좋은듯
+json_file = "batch_test_outputs/comp_lastalign_lessbias_0.1_mselss_ln_2regress_slope1/metrics.json"   #2.4040053 / 3.060839  <---- 이게 제일 좋은듯
 # json_file = "batch_test_outputs/eq_2res_200hz_3input_mselss/metrics.json"
 # json_file = "batch_test_outputs/eq_2res_200hz_3input/metrics.json"
 # json_file = "batch_test_outputs/eq_2res_200hz_3input_ep_more2/metrics.json"
 # json_file = "batch_test_outputs/eq_2res_200hz_3input_big_v_pertb/metrics.json"
 
+
+json_file = "batch_test_outputs_ridi/resnet/metrics.json"   #61.19
+json_file = "batch_test_outputs_body/comp_grav_lfa_ln_2regress_slope1/metrics.json"   #2.25757
+json_file = "batch_test_outputs_ridi/world_ln2regress_slope1/metrics.json"   #2.6276282 /2.367958589
 print('json file : ', json_file)
 with open(json_file, "r") as f:
     data = json.load(f)
@@ -129,8 +138,10 @@ for key, value in data.items():
     if filter_dict:
         ate_value = filter_dict.get("ate")
         # rmse_value = filter_dict.get("rpe_rmse_1000")
-        rmse_value = filter_dict.get("rmse")
+        # rmse_value = filter_dict.get("rmse")
+        rmse_value = filter_dict.get("rpe")
         rmse_vel_value = filter_dict.get("rmse_vel")
+        rmse_vel_value = filter_dict.get("drift_pos (m/m)")
         
         if ate_value is not None:
             ate_values.append(ate_value)

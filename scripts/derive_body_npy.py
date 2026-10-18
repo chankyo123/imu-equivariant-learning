@@ -14,8 +14,8 @@ Transformations per timestep t:
   vel_B[t] = R(t).T @ vel_W[t]
   pos_W_D[t], qxyzw_W_D[t]: unchanged (carrying orientation/world pos to allow later LFA)
 
-Run:
-  python derive_body_npy.py
+Run (from the repo root):
+  python scripts/derive_body_npy.py [SRC] [DST]
 """
 
 import json
@@ -25,8 +25,8 @@ import sys
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-SRC = "local_data/nanobench_processed_2nd_version"
-DST = "local_data/nanobench_bodyframe_2nd_version"
+SRC = sys.argv[1] if len(sys.argv) > 1 else "local_data/nanobench_processed_2nd_version"
+DST = sys.argv[2] if len(sys.argv) > 2 else "local_data/nanobench_bodyframe_2nd_version"
 
 GRAVITY_W = np.array([0.0, 0.0, -9.80665])
 

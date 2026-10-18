@@ -31,10 +31,10 @@ from lfa_preprocessing import apply_lfa  # noqa: E402
 # 4 released ckpts (formerly Archive/checkpoints/ln_resnet_{lfa_MSE,lfa_NLL,chol_MSE,chol_NLL}):
 # (released folder under --ckpt_root, data_root_uses_lfa, head_kind)
 MODELS = {
-    'ln_resnet_lfa_MSE':   dict(ckpt='ginio_rd_lfa_mse_nanobench',   lfa=True,  head='diag'),
-    'ln_resnet_lfa_NLL':   dict(ckpt='ginio_rd_lfa_nll_nanobench',   lfa=True,  head='diag'),
-    'ln_resnet_chol_MSE':  dict(ckpt='ginio_rs_chol_mse_nanobench',  lfa=False, head='chol'),
-    'ln_resnet_chol_NLL':  dict(ckpt='ginio_rs_chol_nll_nanobench',  lfa=False, head='chol'),
+    'ln_resnet_lfa_MSE':   dict(ckpt='nanobench_ginio_rd_lfa_mse',   lfa=True,  head='diag'),
+    'ln_resnet_lfa_NLL':   dict(ckpt='nanobench_ginio_rd_lfa_nll',   lfa=True,  head='diag'),
+    'ln_resnet_chol_MSE':  dict(ckpt='nanobench_ginio_rs_chol_mse',  lfa=False, head='chol'),
+    'ln_resnet_chol_NLL':  dict(ckpt='nanobench_ginio_rs_chol_nll',  lfa=False, head='chol'),
 }
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'

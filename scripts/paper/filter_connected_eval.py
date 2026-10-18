@@ -49,11 +49,11 @@ def tlio_models(ckpt_root: Path = CKPT_ROOT) -> dict:
     ckpt_root = Path(ckpt_root)
     return {
         "vn_eqnio_so3_spectral_so3aug": (
-            str(resolve_ckpt_dir("ginio_e_so3aug_tlio", ckpt_root) / "model_torchscript.pt"),
+            str(resolve_ckpt_dir("nanobench_ginio_e_so3aug_tlio", ckpt_root) / "model_torchscript.pt"),
             "eq_so3_frame_fullCov_2vec_2deep",  # contains "so3_frame"
         ),
         "eqnio_o2_fullCov_paper": (
-            str(resolve_ckpt_dir("eqnio_o2_tlio_ours", ckpt_root) / "model_torchscript.pt"),
+            str(resolve_ckpt_dir("tlio_eqnio_o2_ours", ckpt_root) / "model_torchscript.pt"),
             "eq_o2_frame_fullCov",  # contains "tlio_frame_fullCov"
         ),
     }

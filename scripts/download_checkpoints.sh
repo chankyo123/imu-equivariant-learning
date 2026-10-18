@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # Download GINIO checkpoint archives from the GitHub Release and verify their SHA-256.
 #
-#   bash scripts/download_checkpoints.sh                 # every archive listed in SHA256SUMS
-#   bash scripts/download_checkpoints.sh nanobench_ginio_rd_t119 tlio_ginio_w_ln189
-#   GINIO_RELEASE_TAG=v1.0.0 bash scripts/download_checkpoints.sh
+#   bash scripts/download_checkpoints.sh                       # all four archives (~1.2 GB)
+#   bash scripts/download_checkpoints.sh nanobench               # one benchmark: tlio | ridi | nanobench
+#   bash scripts/download_checkpoints.sh results                 # paper_results.tar.gz (stored outputs behind the numbers)
+#   GINIO_RELEASE_TAG=v1.0-corl2026 bash scripts/download_checkpoints.sh
 #
-# Archives are extracted into checkpoints/<name>/ (folder names match checkpoints/MANIFEST.md).
+# Checkpoint archives extract into checkpoints/<benchmark>_<row>_<variant>/ (names as in
+# checkpoints/MANIFEST.md); paper_results.tar.gz extracts into checkpoints/paper_results/.
 set -euo pipefail
 REPO="${GINIO_REPO:-chankyo123/GINIO}"
-TAG="${GINIO_RELEASE_TAG:-v1.0.0}"
+TAG="${GINIO_RELEASE_TAG:-v1.0-corl2026}"
 BASE="https://github.com/${REPO}/releases/download/${TAG}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="${ROOT}/checkpoints"
@@ -18,22 +20,19 @@ cd "${DEST}"
 echo "Fetching SHA256SUMS from ${BASE}"
 curl -fsSL -o SHA256SUMS "${BASE}/SHA256SUMS"
 
-if [ "$#" -gt 0 ]; then
-  wanted=("$@")
-else
-  mapfile -t wanted < <(awk '{print $2}' SHA256SUMS | sed 's/\.zip$//; s/\.tar\.gz$//')
-fi
+if [ "$#" -gt 0 ]; then wanted=("$@"); else wanted=(tlio ridi nanobench results); fi
 
 for name in "${wanted[@]}"; do
-  asset="$(awk -v n="${name}" '$2==n".zip" || $2==n".tar.gz" {print $2}' SHA256SUMS | head -1)"
-  if [ -z "${asset}" ]; then echo "!! ${name}: not in SHA256SUMS of ${TAG}"; continue; fi
+  case "${name}" in
+    tlio|ridi|nanobench) asset="ginio_checkpoints_${name}.tar.gz"; dest="." ;;
+    results)             asset="paper_results.tar.gz";             dest="paper_results"; mkdir -p "${dest}" ;;
+    *) echo "!! unknown target '${name}' (use tlio | ridi | nanobench | results)"; continue ;;
+  esac
   echo "-> ${asset}"
   curl -fL --retry 3 -o "${asset}" "${BASE}/${asset}"
   grep " ${asset}\$" SHA256SUMS | sha256sum -c -
-  case "${asset}" in
-    *.zip)    unzip -qo "${asset}" ;;
-    *.tar.gz) tar -xzf "${asset}" ;;
-  esac
+  # the checkpoint archives carry a packaging-time copy of MANIFEST.md; the repo copy stays authoritative
+  tar -xzf "${asset}" -C "${dest}" --exclude=MANIFEST.md
   rm -f "${asset}"
 done
 echo "Done. Checkpoints are under ${DEST}/<name>/ ; see checkpoints/MANIFEST.md for what each one reproduces."

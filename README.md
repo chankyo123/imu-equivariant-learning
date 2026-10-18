@@ -1,209 +1,239 @@
-# GINIO: A Geometric SO(3)-Equivariant Interface for Neural Inertial Odometry
+<div align="center">
 
-[![Paper](https://img.shields.io/badge/CoRL%202026-OpenReview-b31b1b.svg)](https://openreview.net/forum?id=nl8iBTm3Mt)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+<h1>GINIO: A Geometric SO(3)-Equivariant Interface for Neural Inertial Odometry</h1>
 
-**Chankyo Kim, Minghan Zhu, Tzu-Yuan Lin, Avantika Rattan, Maani Ghaffari**
-University of Michigan, [CURLY Lab](https://curly.engin.umich.edu/)
+[**Chankyo Kim**](https://github.com/chankyo123)<sup>1</sup> · [**Minghan Zhu**](https://minghanz.github.io/)<sup>1</sup> · [**Tzu-Yuan Lin**](https://tzuyuan.github.io/)<sup>1</sup> · **Avantika Rattan**<sup>1</sup> · [**Maani Ghaffari**](https://name.engin.umich.edu/people/ghaffari-maani/)<sup>1</sup>
 
-*Conference on Robot Learning (CoRL) 2026, Austin, TX.*
-Paper and reviews: https://openreview.net/forum?id=nl8iBTm3Mt
+<sup>1</sup>University of Michigan, [CURLY Lab](https://curly.engin.umich.edu/)
+
+**Conference on Robot Learning (CoRL) 2026 · Austin, TX**
+
+[![OpenReview](https://img.shields.io/badge/CoRL%202026-OpenReview-8c1b13.svg)](https://openreview.net/forum?id=nl8iBTm3Mt)
+[![arXiv](https://img.shields.io/badge/arXiv-2609.25338-b31b1b.svg)](https://arxiv.org/abs/2609.25338)
+[![License: MIT](https://img.shields.io/github/license/chankyo123/GINIO)](LICENSE)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](environment.yml)
+[![PyTorch ≥2.4](https://img.shields.io/badge/PyTorch-%E2%89%A52.4-ee4c2c.svg?logo=pytorch&logoColor=white)](requirements.txt)
+[![Checkpoints](https://img.shields.io/github/v/release/chankyo123/GINIO?label=checkpoints)](https://github.com/chankyo123/GINIO/releases)
+[![GitHub stars](https://img.shields.io/github/stars/chankyo123/GINIO?style=social)](https://github.com/chankyo123/GINIO/stargazers)
+[![Visitors](https://hits.sh/github.com/chankyo123/GINIO.svg?label=visitors&color=263759)](https://hits.sh/github.com/chankyo123/GINIO/)
+
+[[`Paper & reviews`](https://openreview.net/forum?id=nl8iBTm3Mt)] [[`Model zoo`](#model-zoo)] [[`Data`](docs/DATA.md)] [[`Reproduce Table 2`](#quick-start)] [[`Known issues`](docs/KNOWN_ISSUES.md)] [[`BibTeX`](#citation)]
+
+<img src="assets/fig1_teaser.png" width="88%" alt="Existing learned inertial odometry is robust only to rotations about gravity; GINIO's equivariant network gives consistent trajectories for any 3D IMU mounting orientation.">
+
+</div>
+
+**TL;DR.** GINIO is an SO(3)-equivariant *interface* between an IMU window and the filter that
+consumes it. Given a calibrated window, the network predicts a motion measurement whose **mean
+transforms as a vector** and whose **covariance transforms congruently** (Σ ↦ RΣRᵀ) under any
+rotation of the IMU measurement frame, by construction rather than by augmentation. The same
+interface is instantiated on three backbones, Lie-Neuron ResNets, a Vector-Neuron version of the
+AirIO recurrent model, and a full-SO(3) canonicalised EqNIO-style model, and evaluated on TLIO,
+RIDI, NanoBench and a Fetch remounting set. Every released checkpoint ships with its SHA-256,
+parameter count and the paper value it reproduces ([Model zoo](#model-zoo)).
 
 > **Formerly `imu-equivariant-learning`.** This repository started in 2023 as a yaw-equivariant
 > network-coupled inertial odometry code base. GINIO is the same project matured to full SO(3)
-> equivariance with a covariance interface, and it is now named after the CoRL 2026 paper. The last
-> pre-GINIO version is tagged [`imu-equivariant-learning-final`](../../releases/tag/imu-equivariant-learning-final);
-> old links redirect here.
+> equivariance with a covariance interface, now named after the CoRL 2026 paper. Old links
+> redirect here; the last pre-GINIO snapshot is tagged
+> [`imu-equivariant-learning-final`](../../releases/tag/imu-equivariant-learning-final).
 
-## Overview
+## News
 
-Neural inertial odometry (NIO) uses a network as a learned measurement inside a filter. GINIO is an
-SO(3)-equivariant *interface* for that measurement: given a calibrated IMU window, it predicts a
-motion measurement whose **mean transforms as a vector** and whose **covariance transforms
-congruently as a second-order tensor** under any rotation of the IMU measurement frame. The same
-interface is instantiated on several backbones:
+- **2026-10-18** — Code release: all three instantiations, the paper's evaluation scripts
+  (`scripts/paper/`), 32 checkpoints with SHA-256 across TLIO / RIDI / NanoBench
+  ([release `v1.0-corl2026`](../../releases/tag/v1.0-corl2026)), and the exact split lists
+  (`splits/`). Repository renamed from `imu-equivariant-learning` to **GINIO**.
+- **2026-10** — Camera-ready and [OpenReview page](https://openreview.net/forum?id=nl8iBTm3Mt)
+  (reviews included) are public. GINIO is a **poster at CoRL 2026** (Nov 9–11, Austin).
+- **Planned** — processed NanoBench split and the Fetch remounting set as a data release
+  (pending the redistribution terms); the Fetch models and the AquaticVision evaluation could
+  not be recovered from the original machines, see [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md).
 
-| Suffix | Benchmark | What it is | Code |
-|---|---|---|---|
-| GINIO-W / GINIO-S | TLIO, RIDI (filter-connected) | world-frame / sensor-frame Lie-Neuron ResNet (`ln_resnet`) + SCEKF / InEKF | [`src/`](src/) |
-| GINIO-RD / GINIO-RS | NanoBench | `ln_resnet` with a diagonal / spectral covariance head | [`src/`](src/) |
-| GINIO-R | Fetch remounting | `ln_resnet` | [`src/`](src/) |
-| GINIO-A | NanoBench | Vector-Neuron version of the AirIO recurrent model (VN-CNN + VN-GRU) | [`airio/`](airio/) |
-| GINIO-E | NanoBench | full-SO(3) canonicalised EqNIO-style model | [`eqnio/`](eqnio/) |
+## What is in the box
 
-**Last-Frame Alignment (LFA)** is a deterministic preprocessing step that expresses a window in the
-frame of its last IMU sample; for an SO(3)-equivariant predictor it is provably equivalent to
-world-frame training (Appendix D of the paper). It is implemented in
-[`src/dataloader/sequences_dataset.py`](src/dataloader/sequences_dataset.py) and switched by the
-dataset path (`bodyframe` in the path selects the sensor-frame branch; `nolfa` turns LFA off).
+<div align="center"><img src="assets/ginio_pipeline_v2.png" width="92%" alt="GINIO in a neural inertial odometry pipeline: the filter propagates raw IMU measurements and tracks biases; the equivariant predictor returns a motion head and a covariance head on a direct, world-frame or last-frame-aligned IMU window."></div>
+
+| Suffix | Benchmark | What it is | Code | Released checkpoint |
+|---|---|---|---|:---:|
+| GINIO-W / GINIO-S | TLIO, RIDI (filter-connected) | world-frame / sensor-frame **Lie-Neuron ResNet** (`ln_resnet`) + SCEKF / InEKF | [`src/`](src/) | W: yes · S: no |
+| GINIO-RD / GINIO-RS | NanoBench | `ln_resnet` with a diagonal / spectral covariance head | [`src/`](src/) | yes / yes |
+| GINIO-R | Fetch remounting | `ln_resnet` | [`src/`](src/) | no (lost) |
+| GINIO-A | NanoBench | **Vector-Neuron AirIO** recurrent model (VN-CNN + VN-GRU), with or without an attitude channel | [`airio/`](airio/) | yes |
+| GINIO-E | NanoBench | full-SO(3) **canonicalised EqNIO-style** model | [`eqnio/`](eqnio/) | yes |
+
+**Last-Frame Alignment (LFA)** expresses a window in the frame of its last IMU sample; for an
+SO(3)-equivariant predictor it is provably equivalent to world-frame training (Appendix D). It is
+implemented in [`src/dataloader/sequences_dataset.py`](src/dataloader/sequences_dataset.py) and
+switched by the dataset path (`bodyframe` selects the sensor-frame branch, `nolfa` turns LFA off).
+The standalone reference implementation is [`scripts/lfa_preprocessing.py`](scripts/lfa_preprocessing.py).
+
+<div align="center"><img src="assets/filter_traj_grid_so3.png" width="92%" alt="Filter trajectories under an SO(3) sensor remount with the same SCEKF and three velocity networks: EqNIO O(2) and TLIO with SO(3) augmentation diverge, GINIO tracks the ground truth."></div>
 
 ## Installation
 
 ```bash
-conda env create -f environment.yml      # python 3.12 + pip requirements
-conda activate ginio
-# install the torch build matching your CUDA driver, e.g.
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+git clone https://github.com/chankyo123/GINIO.git && cd GINIO
+conda env create -f environment.yml && conda activate ginio
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124   # pick the wheel for your CUDA driver
 ```
 
-The released checkpoints were trained and evaluated with torch 2.12 (nightly, cu128), numpy 1.26,
-scipy 1.17, pypose 0.9.5 and pyhocon 0.3.63; see [`requirements.txt`](requirements.txt).
-
-## Data
-
-All loaders expect the TLIO layout: one folder per sequence with `imu0_resampled.npy` (17 columns:
-`ts_us | gyr(3) | acc(3) | q_xyzw_World_Device(4) | pos_World(3) | vel(3)`),
-`imu0_resampled_description.json`, `calibration.json`, plus `train_list.txt / val_list.txt /
-test_list.txt` at the dataset root. Put datasets under `local_data/` (git-ignored).
-
-| Dataset | Source | Notes |
-|---|---|---|
-| TLIO golden | [CathIAS/TLIO](https://github.com/CathIAS/TLIO) release (`golden-new-format-cc-by-nc-with-imus-v1.5.zip`) | 284 / 36 / 36 sequences, world-frame IMU. `gdown 14YKW7PsozjHo_EdxivKvumsQB7JMw1eg && unzip ... -d local_data/` |
-| RIDI | [RIDI data_publish_v2](https://github.com/higerra/ridi_imu) | Convert to the TLIO layout before use (converter not yet included, see *Status*). |
-| NanoBench | [NanoBench](https://arxiv.org/abs/2603.09908) (Crazyflie 2.1 flights, Vicon ground truth) | Our processed world-frame split (74 / 16 / 17 sequences, 100 Hz, gravity removed) will be published with the checkpoints. Then derive the sensor-frame copy: `python scripts/derive_body_npy.py` and `ln -s nanobench_bodyframe_2nd_version local_data/nanobench_bodyframe_nolfa_2nd_version` (same data; the `nolfa` name disables LFA). |
-| Fetch remounting | collected by us (Adafruit BNO055 in a Fetch mobile base; 23 nominal + 23 x-remount + 23 y-remount sequences) | Shipped as `fetch_dataset.zip` with the paper supplement; will be mirrored here. |
+Known-good versions, optional extras and gotchas: [`docs/INSTALL.md`](docs/INSTALL.md).
 
 ## Quick start
 
-### Lie-Neuron models (GINIO-W/S/RD/RS/R) — `src/`
-
-Train the NanoBench GINIO-RD configuration (sensor frame, no LFA, diagonal head; this is the
-hyper-parameter set found by the Optuna sweep in the paper):
-
 ```bash
-python src/main_net.py --mode train \
+# 1. checkpoints (SHA-256 verified) — one benchmark or everything (~1.2 GB)
+bash scripts/download_checkpoints.sh nanobench
+
+# 2. data: TLIO golden / RIDI / NanoBench in the TLIO layout under local_data/  -> docs/DATA.md
+#    (NanoBench: world-frame .npy + `python scripts/derive_body_npy.py` for the sensor-frame copy)
+
+# 3. reproduce a Table-2 row with the released weights (NN-only, Umeyama ATE = `ate_um`)
+python src/main_net.py --mode test --arch ln_resnet --body_frame True \
+  --root_dir local_data/nanobench_bodyframe_nolfa_2nd_version --out_dir test_outputs/ginio_rd \
+  --model_path checkpoints/nanobench_ginio_rd_t119/checkpoint_best.pt \
+  --imu_freq 200 --imu_base_freq 1000 --window_time 0.775 --sample_freq 50 --batch_size 1024
+#    GINIO-A rows + ID/SO(3) + equivariance / covariance-law errors:
+cd airio && python -m evaluation.eval_idso3 --config configs/Nanobench/motion_body_noatt_vn_small.conf --n_rot 3
+
+# 4. train one configuration (GINIO-RD recipe)
+python src/main_net.py --mode train --arch ln_resnet --body_frame True \
   --root_dir local_data/nanobench_bodyframe_nolfa_2nd_version --out_dir models/ginio_rd \
-  --arch ln_resnet --body_frame True --epochs 201 --batch_size 512 --lr 4.1e-4 --weight_decay 5.8e-3 \
-  --imu_freq 200 --imu_base_freq 1000 --window_time 0.675 --sample_freq 10 \
-  --input_dim 6 --output_dim 3 --seed 1 --workers 4 --dataset_style mmap \
-  --rpe_window 2.0 --mse_warmup_epochs 12 --nll_weight 1.0
+  --epochs 170 --batch_size 256 --lr 5.44e-4 --weight_decay 2.41e-4 \
+  --imu_freq 200 --imu_base_freq 1000 --window_time 0.775 --sample_freq 50 \
+  --do_bias_shift --accel_bias_range 0.3878 --gyro_bias_range 0.0189 --nll_weight 1.0
 ```
 
-Spectral (GINIO-RS) and world-frame (GINIO-W) variants:
-
-```bash
-# spectral covariance head, LFA on (path without "nolfa"), 1.0 s window (the spectral head is wired for window_time 1.0)
-python src/main_net.py --mode train --root_dir local_data/nanobench_bodyframe_2nd_version --out_dir models/ginio_rs \
-  --arch ln_resnet_chol --cov_type eq_chol --body_frame True --window_time 1.0 --sample_freq 20 --imu_freq 200 --imu_base_freq 1000 \
-  --batch_size 16 --epochs 201 --lr 4.1e-4 --weight_decay 5.8e-3 --init_log_a_scale -1.897
-# world-frame TLIO (GINIO-W)
-python src/main_net.py --mode train --root_dir local_data/tlio_golden --out_dir models/ginio_w \
-  --arch ln_resnet --body_frame False --window_time 1.0 --sample_freq 20 --imu_freq 200 --imu_base_freq 1000 --batch_size 1024 --epochs 120
-```
-
-Test (writes per-sequence `trajectory.txt`, `net_outputs.txt` and `metrics.json`; `ate_um` is the
-Umeyama-aligned ATE used in Table 2, `ate` the TLIO-style mean position error):
-
-```bash
-python src/main_net.py --mode test --root_dir local_data/nanobench_bodyframe_nolfa_2nd_version \
-  --out_dir test_outputs/ginio_rd --model_path models/ginio_rd/checkpoint_best.pt --arch ln_resnet --body_frame True \
-  --batch_size 1024 --imu_freq 200 --imu_base_freq 1000 --window_time 0.675 --sample_freq 10
-```
-
-Filter-connected evaluation (TLIO/RIDI, Table 1): export TorchScript, run the tracker, then compute
-metrics. `--use_riekf True --body_frame True` selects the InEKF sensor-frame configuration (GINIO-S).
-
-```bash
-python src/convert_model_to_torchscript.py --model_path models/ginio_w/checkpoint_best.pt \
-  --model_param_path models/ginio_w/parameters.json --out_dir models/ginio_w --input_dim 6
-python src/main_filter.py --root_dir local_data/tlio_golden/ --model_path models/ginio_w/model_torchscript.pt \
-  --model_param_path models/ginio_w/parameters.json --out_dir filter_outputs/ginio_w --update_freq 20 --erase_old_log
-python src/plot_filter_state.py --root_dir local_data/tlio_golden/ --log_dir filter_outputs/ginio_w --no-make_plots --no-save_fig
-```
-
-Optional training/evaluation switches (ported from the rebuttal study, off by default):
-`--so3_train_aug [--so3_train_aug_max_deg 180]` rotates each training window and its vector targets by
-a random rotation (world- and sensor-frame); `--freeze_mean --model_path <base.pt>` loads a trained
-model, freezes backbone and mean head and trains only the covariance head (the `ln_resnet_cov_diag`
-architecture is the diagonal-head twin of `ln_resnet_cov` for this matched-pair study);
-`--test_perturb_type {gravity,lfa,so3} --test_perturb_deg D` applies the frame-estimation-mismatch
-perturbations of Supplement Table 10 at test time.
-
-Important flags: `--body_frame` is a string (`"True"`/`"False"`); always pass `--imu_freq 200`
-(the window length is `int(200 * window_time)` samples, so on 100 Hz NanoBench `--window_time 1.0`
-is a 2 s window); `--cov_type {diag, eq_spec, eq_chol}` is inferred from the architecture when omitted.
-
-### AirIO-style recurrent models (GINIO-A) — `airio/`
-
-Run from inside `airio/`. Configs are HOCON; dataset roots are relative (`../local_data/...`).
-
-```bash
-cd airio && export WANDB_MODE=offline
-# GINIO-A (no attitude input), the 0.045M "small" model of Table 2
-python train_motion.py --config configs/Nanobench/motion_body_noatt_vn_small.conf --device cuda:0
-# GINIO-A with attitude channel; A2 ("rows of R_WS") attitude encoding + spectral covariance head
-python train_motion.py --config configs/Nanobench/motion_body_a2_spec_small.conf --device cuda:0 --seed 0
-# whole-sequence inference -> experiments/<exp>/<conf>/net_output.pickle
-python inference_motion.py --config configs/Nanobench/motion_body_noatt_vn_small.conf --device cuda:0
-# ID/ID and ID/SO(3): Umeyama ATE, mean-equivariance error and covariance-law error under
-# (P) a physical remount R_WS -> R_WS Q^T and (G) the "rotate every vector input" protocol
-python -m evaluation.eval_idso3 --config configs/Nanobench/motion_body_noatt_vn_small.conf --n_rot 3 --device cuda:0
-# unit test of the A2 + spectral construction (24 checks, CPU)
-CUDA_VISIBLE_DEVICES="" python -m model.test_a2_spectral_equivariance
-```
-
-Attitude encodings live in [`airio/model/attitude.py`](airio/model/attitude.py): `logmap`
-(`Log(R_WS)`, the encoding used for the paper's with-attitude row), `rows` (the three rows of
-`R_WS`, exactly equivariant under a remount and lossless), `up`, `rel`. The spectral head is
-`VNSpectralCov` in [`airio/model/vn_codenet.py`](airio/model/vn_codenet.py).
-
-### Canonicalised models (GINIO-E and the EqNIO O(2) baseline) — `eqnio/`
-
-```bash
-cd eqnio/TLIO-master
-# EqNIO O(2) baseline / GINIO-E (full SO(3)); add --so3_augment --so3_augment_max_deg 180 for SO(3) augmentation
-python src/main_net.py --mode train --arch eq_o2_frame_fullCov_2vec_2deep  --root_dir local_data/tlio_golden --out_dir models/eqnio_o2 \
-  --batch_size 1024 --epochs 40 --lr 1e-4 --window_time 1.0 --sample_freq 20 --imu_freq 200 --imu_base_freq 1000 --workers 4 --dataset_style mmap
-python src/main_net.py --mode train --arch eq_so3_frame_fullCov_2vec_2deep --root_dir local_data/tlio_golden --out_dir models/ginio_e --so3_augment --so3_augment_max_deg 180 \
-  --batch_size 1024 --epochs 40 --lr 1e-4 --window_time 1.0 --sample_freq 20 --imu_freq 200 --imu_base_freq 1000 --workers 4 --dataset_style mmap
-# filter chain
-python src/convert_model_to_torchscript_eq.py --model_path models/ginio_e/checkpoint_best.pt --model_param_path models/ginio_e/parameters.json --out_dir models/ginio_e --cpu
-python src/main_filter.py --root_dir local_data/tlio_golden/ --model_path models/ginio_e/model_torchscript.pt --model_param_path models/ginio_e/parameters.json --out_dir models/ginio_e/filter --update_freq 20.0 --erase_old_log --no-visualize
-python ../test_vn_eqnio_equivariance.py     # numerical SO(3) equivariance check of the GINIO-E model
-```
+Full command sheets for the three families, the filter chains (SCEKF / InEKF), the attitude-error
+sweep and the frozen-mean covariance study: [`docs/TRAIN_EVAL.md`](docs/TRAIN_EVAL.md).
+Scripts that regenerate the paper's tables and figures: [`scripts/paper/README.md`](scripts/paper/README.md).
+A one-minute CPU self-check of the equivariance machinery: `cd airio && python -m model.test_a2_spectral_equivariance` (24 checks).
 
 ## Model zoo
 
-See [`checkpoints/MANIFEST.md`](checkpoints/MANIFEST.md) for every released checkpoint with
-SHA-256, parameter count and the Table-2 value it reproduces. Released: the four AirIO-style
-NanoBench rows (AirIO ×2, GINIO-A ×2), GINIO-E, GINIO-RS, the four covariance-ablation models of
-Supplement Table 9, and the closest archived GINIO-RD run (Optuna trial 55). Not released because
-no checkpoint survives: ResNet1D 5.43M, the EqNIO O(2) NanoBench row (the EqNIO authors' public
-TLIO model evaluated on NanoBench), the TLIO/RIDI filter models of Table 1 and the Fetch models of
-Table 3 (see *Status*).
+Checkpoints are assets of the [`v1.0-corl2026` release](../../releases/tag/v1.0-corl2026), one
+archive per benchmark plus [`paper_results.tar.gz`](../../releases/download/v1.0-corl2026/paper_results.tar.gz)
+(the stored outputs behind every "reproduced" value) and a `SHA256SUMS` file;
+`bash scripts/download_checkpoints.sh` fetches and verifies them. The table lists the rows that
+back printed numbers; [`checkpoints/MANIFEST.md`](checkpoints/MANIFEST.md) is the source of truth
+for all 32 folders, hashes, parameter counts, loader notes and the 18 traps you should read before
+loading anything. Table numbers follow the camera-ready PDF.
 
-## Evaluation protocol notes
+| Paper row | Folder | Family / registry key | Params | Paper → reproduced | Status |
+|---|---|---|---:|:---:|---|
+| Table 1 TLIO GINIO-W | `tlio_ginio_w_ln189` | `src/` · `ln_resnet` (two weight sets, see MANIFEST) | 0.57M | 1.615 → 1.615 (ID/ID) | PINNED / ID-SO(3) CKPT_ONLY |
+| Table 1 TLIO EqNIO | `tlio_eqnio_o2` | `eqnio/` · `eq_o2_frame_fullCov_2vec_2deep` | 6.02M | 1.554 → 1.554 · 76.389 → 76.39 | PINNED |
+| Table 1 TLIO ResNet+SCEKF+aug. | `tlio_resnet_so3aug` | `src/` · `resnet` | 5.42M | 1.844 → 1.842 | CKPT_ONLY |
+| Table 1 TLIO ResNet+SCEKF | `tlio_resnet_scekf_retrain2026` | `src/` · `resnet` (2026 retrain) | 5.42M | 1.725 → 1.746 | RETRAIN |
+| Table 1 TLIO ResNet-S+InEKF | `tlio_resnet_s_lfa_candidate` | `src/` · `resnet`, LFA | 5.42M | 2.814 → 2.876 | CKPT_ONLY |
+| Fig. 5(b) covariance arms | `tlio_fig5b_spec_s0v2`, `tlio_fig5b_diag_s0v2` | `src/` · `ln189_speccov_s0`, `ln189_speccov_s0_diag` | 1.38M | 1.081 / 1.072 → same | PINNED |
+| Table 1 RIDI GINIO-W, Sec. 4.2 NN-only | `ridi_ginio_w` | `src/` · `ln_resnet_slope1_nobias` | 0.57M | 0.927 → 0.927 (NN); filter cells not reproduced | PINNED / CKPT_ONLY |
+| Table 1 RIDI "EqNIO" (SO(3)-aug.) | `ridi_eqnio_o2_so3aug` | `eqnio/` · `eq_o2_frame_fullCov_2vec_2deep` | 6.02M | 2.408 → 2.408 | PINNED / ID-SO(3) CKPT_ONLY |
+| Table 1 RIDI ResNet+SCEKF+aug. | `ridi_resnet_so3aug` | `src/` · `resnet` | 5.42M | 1.401 → no stored output | CKPT_ONLY |
+| Table 2 AirIO (no-att. / with-att.) | `nanobench_airio_noatt`, `nanobench_airio_withatt` | `airio/` · `codenetmotion`, `codewithrot` | 0.33M / 0.39M | 5.579 → 5.5785 · 1.205 → 1.2049 | PINNED |
+| Table 2 GINIO-A (no-att. / with-att.) | `nanobench_ginio_a_noatt`, `nanobench_ginio_a_withatt` | `airio/` · `vn_codenetmotion_small`, `vn_codewithrot_small` | 0.045M | 1.430 → 1.4302 · 1.045 → 1.0453 | PINNED |
+| Table 2 ResNet1D | `nanobench_resnet1d` | `src/` · `resnet` | 5.43M | 0.645 → 0.6455 | PINNED |
+| Table 2 EqNIO O(2) | `nanobench_eqnio_o2` | `eqnio/` · `eq_o2_frame_fullCov_2vec_2deep` (NanoBench-trained) | 6.03M | 0.828 → 0.8282 | PINNED |
+| Table 2 GINIO-E | `nanobench_ginio_e_so3aug_tlio` | `eqnio/` · `eq_so3_frame_fullCov_2vec_2deep` (TLIO-trained, zero-shot) | 6.03M | 0.785 → 0.7854 | PINNED |
+| Table 2 GINIO-RD | `nanobench_ginio_rd_t119` | `src/` · `ln_resnet` (0.775 s window, no LFA) | 0.54M | 0.581 → 0.5805 | PINNED |
+| Table 2 GINIO-RS | `nanobench_ginio_rs_chol_mse` | `src/` · `ln_resnet_chol` (trained **without** LFA) | 0.80M | 0.789 → 0.7887 | PINNED (label caveat) |
+| Table 8 covariance ablation | `nanobench_ginio_rd_lfa_{mse,nll}`, `nanobench_ginio_rs_chol_{mse,nll}` | `src/` · `ln_resnet`, `ln_resnet_chol` | 0.57M / 0.80M | all cells reproduce except Spectral/NLL NLL and NEES | PINNED / UNSUPPORTED |
+| Table 9 NanoBench aug. baselines | `nanobench_resnet1d_so3aug`, `nanobench_eqnio_o2_so3aug` | `src/` · `resnet`; `eqnio/` | 5.42M / 6.02M | sweeps measured, printed values differ | CKPT_ONLY |
 
-* **Table 2 ATE** is the Umeyama-aligned (rotation + translation, no scale) position RMSE over the
-  17 NanoBench test sequences after integrating the predicted body velocity through ground-truth
-  attitude (`ate_um` in `src/network/test.py`, `ate_for` in `airio/evaluation/eval_idso3.py`).
-* **ID/SO(3)** rotates the accelerometer and gyroscope channels by a sampled `R`, rotates vector
-  targets by the same `R`, transforms covariance targets by `R Σ Rᵀ`, and un-rotates predictions
-  before scoring. `airio/evaluation/eval_idso3.py` implements this (and additionally reports the
-  mean-equivariance and covariance-congruence errors). The imu-equivariant-learning test transform
-  `--test_perturb_type so3` in older copies of this code does *not* un-rotate predictions and must
-  not be used for this protocol.
-* **Checkpoint selection** in `airio/train_motion.py` follows upstream AirIO: `best_model.ckpt` is
-  the epoch with the lowest loss on the config's `test` block, which in
-  `airio/configs/datasets/Nanobench/nanobench_body.conf` is the 17-sequence reported test split
-  (the `eval` block, 16 disjoint sequences, is logged only). This applies identically to the AirIO
-  baselines and the GINIO-A models.
-* **GINIO-E** in Table 2 was trained on TLIO with full-SO(3) augmentation and evaluated zero-shot on
-  NanoBench (no NanoBench training).
-* No rotation augmentation is used in any released training configuration; ID/SO(3) numbers measure
-  architectural equivariance. The Lie-Neuron family uses a per-window constant bias shift
-  (accel ±0.2 m/s², gyro ±0.05 rad/s) at training time; the AirIO family uses no augmentation.
+Not in the table but released as controls or references: `tlio_eqnio_o2_ours`, `ridi_eqnio_o2_noaug`,
+`ridi_resnet_epoch1`, `ridi_imunet_reimpl`, `nanobench_airio_*_serverb`, `nanobench_ginio_rd_t55`,
+`nanobench_ginio_rd_nolfa_nll_matched`. **Not released because nothing survives:** the Fetch models
+(Tables 10–12), AquaticVision (Table 13), GINIO-S on TLIO/RIDI, the RIDI ResNet+SCEKF model, the
+Table 2 ID/SO(3) generator for the non-equivariant rows, and the 0.273M GINIO-A originals of
+Table 4 (they no longer load strictly). Details and evidence: [`checkpoints/MANIFEST.md`](checkpoints/MANIFEST.md),
+[`docs/PAPER_ARTIFACT_MAP.md`](docs/PAPER_ARTIFACT_MAP.md), [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md).
 
-## Status
+## Data
 
-* [x] Code for all five instantiations, evaluation scripts, filter chains.
-* [x] NanoBench and covariance-ablation checkpoints (GitHub Release).
-* [ ] Processed NanoBench split (1.0 GB) and the Fetch remounting set (57 MB) as a data release.
-* [ ] RIDI → TLIO-layout converter and the TLIO/RIDI/Fetch model checkpoints (being recovered from
-      the original training machine).
-* [ ] AquaticVision evaluation code (Appendix K).
+All loaders read the TLIO layout (one folder per sequence with `imu0_resampled.npy`,
+`calibration.json`, description JSON; split lists at the dataset root) under `local_data/`. The exact
+train / val / test lists are committed in [`splits/`](splits/). Sources, conversions and caveats
+(including that the processed NanoBench accelerometer has gravity removed): [`docs/DATA.md`](docs/DATA.md).
+
+| Dataset | Used in | Source |
+|---|---|---|
+| TLIO golden (CC BY-NC) | Table 1, Tables 5–7, Fig. 5 / 11 / 12 | [CathIAS/TLIO](https://github.com/CathIAS/TLIO) release |
+| RIDI | Table 1, Table 9 | [RIDI `data_publish_v2`](https://github.com/higerra/ridi_imu) + `scripts/ridi/` converters |
+| NanoBench (Crazyflie 2.1, Vicon) | Table 2, Tables 4 / 8 / 9, Figs. 8–11 | [NanoBench](https://arxiv.org/abs/2603.09908); our 100 Hz world-frame conversion + `scripts/derive_body_npy.py` |
+| Fetch remounting (ours) | Tables 10–12, Figs. 13–14 | `fetch_dataset.zip` in the CoRL supplement (69 sequences) |
+
+<div align="center"><img src="assets/tlio_nanobench_nominal_cdf_v2.png" width="92%" alt="Empirical CDFs of per-sequence nominal ATE on TLIO (GINIO-W vs EqNIO O(2) vs TLIO) and NanoBench (GINIO-RD vs ResNet1D vs EqNIO O(2))."></div>
+
+## Reproducibility notes
+
+Three things to know before comparing numbers; everything else is in
+[`docs/EVAL_PROTOCOL.md`](docs/EVAL_PROTOCOL.md) and the MANIFEST traps.
+
+* **Metrics.** Table 2 reports the Umeyama-aligned (rotation + translation, no scale) position RMSE
+  after integrating the predicted body velocity through ground-truth attitude (`ate_um`); the
+  TLIO-style `ate` in `metrics.json` is an unaligned mean error and not comparable. Table 1 mixes two
+  filter metric codes (TLIO-metric vs EqNIO-metric); the MANIFEST says which one each value used.
+* **ID/SO(3).** Rotate IMU channels and vector targets by the same `R`, transform covariance targets
+  by `RΣRᵀ`, un-rotate predictions. `airio/evaluation/eval_idso3.py` and
+  `--test_perturb_type so3` implement this; both equivariant families are unchanged under any
+  rotation by construction (≤ 5e-9 relative for the attitude-free GINIO-A). The with-attitude GINIO-A
+  is equivariant only when its attitude channel is rotated like the other vectors.
+* **Checkpoint selection.** `airio/train_motion.py` (upstream AirIO behaviour) selects
+  `best_model.ckpt` on the config's `test` block, which for NanoBench is the reported 17-sequence
+  test split, for AirIO baselines and GINIO-A alike; the RIDI `val_list` equals its `test_list`.
+  No rotation augmentation is used for any paper model.
+
+Discrepancies between the camera-ready and the surviving evidence (for example the Table 8
+Spectral/NLL NLL and NEES cells, and the GINIO-RS "body+LFA" label) are listed with file-level
+evidence in [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md); we will keep that page and the
+OpenReview thread in sync.
+
+## Repository layout
+
+```text
+GINIO/
+├── src/                    Lie-Neuron family (GINIO-W/S/RD/RS/R): training, test, SCEKF / InEKF trackers   [TLIO-derived]
+├── airio/                  Vector-Neuron AirIO family (GINIO-A) and the AirIO baselines; run from inside   [Air-IO-derived]
+├── eqnio/TLIO-master/      canonicalised family (GINIO-E) and the EqNIO O(2) baseline                        [EqNIO-derived]
+├── scripts/
+│   ├── download_checkpoints.sh   release assets + SHA-256 verification
+│   ├── paper/                    scripts behind the paper's tables and figures (see its README)
+│   ├── export/  ridi/            TorchScript exports with full covariance; RIDI -> TLIO-layout converters
+│   ├── derive_body_npy.py  lfa_preprocessing.py  run_test_all.sh  run_sweep*.sh  run_finetune.sh
+│   └── provenance/               diffs of the forks behind the ledger-only Table 1 / 6 / 7 numbers
+├── checkpoints/MANIFEST.md        model zoo: every released checkpoint, hash, loader note, status, traps
+├── docs/                   INSTALL · DATA · TRAIN_EVAL · EVAL_PROTOCOL · FILTER_EVALUATION · KNOWN_ISSUES · PAPER_ARTIFACT_MAP · RELEASE_LAYOUT
+├── splits/                 exact train / val / test lists (TLIO, RIDI, NanoBench)
+├── assets/                 figures used in this README
+├── CITATION.cff · LICENSE · THIRD_PARTY_NOTICES.md · CONTRIBUTING.md · environment.yml · requirements.txt
+```
+
+The three families are modified copies of three upstreams with their own config systems, so they
+live in three subfolders (the way EqNIO ships `TLIO-master/` and `RONIN/`).
+
+## License
+
+Code written for GINIO is released under the [MIT License](LICENSE). The repository contains
+modified copies of [TLIO](https://github.com/CathIAS/TLIO) (BSD), [AirIO](https://github.com/Air-IO/Air-IO)
+(BSD-3-Clause), [Vector Neurons](https://github.com/FlyingGiraffe/vnn) (MIT),
+[Lie Neurons](https://github.com/UMich-CURLY/LieNeurons) (BSD-3-Clause) and
+[EqNIO](https://github.com/RoyinaJayanth/EqNIO) (no license file upstream; redistributed for
+research reproduction, see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)); their terms apply to
+the corresponding files. Datasets are not redistributed. The checkpoints inherit the license of the
+data they were trained on (TLIO golden is CC BY-NC).
+
+## Acknowledgements
+
+GINIO grew out of the public TLIO code base and would not exist without the groups who released
+theirs: TLIO, EqNIO, AirIO, Vector Neurons and Lie Neurons (same lab). If we have missed an
+attribution, please open an issue and we will fix it. Related repositories from our group:
+[LieNeurons](https://github.com/UMich-CURLY/LieNeurons).
 
 ## Citation
+
+GINIO is equivariant to rotations but not invariant to stars: if the code or the checkpoints helped
+your work, a ⭐ genuinely changes our output, and please cite the paper.
 
 ```bibtex
 @inproceedings{kim2026ginio,
@@ -215,8 +245,8 @@ Table 3 (see *Status*).
 }
 ```
 
-## Acknowledgements
+<div align="center">
 
-This code builds on [TLIO](https://github.com/CathIAS/TLIO), [EqNIO](https://github.com/RoyinaJayanth/EqNIO),
-[AirIO](https://github.com/Air-IO/Air-IO), [Vector Neurons](https://github.com/FlyingGiraffe/vnn) and
-[Lie Neurons](https://github.com/UMich-CURLY/LieNeurons). See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+[![Star History Chart](https://api.star-history.com/svg?repos=chankyo123/GINIO&type=Date)](https://star-history.com/#chankyo123/GINIO&Date)
+
+</div>

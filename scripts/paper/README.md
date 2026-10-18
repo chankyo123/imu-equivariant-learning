@@ -16,7 +16,7 @@ it produced.
   `--data_lfa` / `--data_nolfa`, `--out_dir`; the covariance-ablation tools use dashed names,
   `--out-dir`, as in the original).
 * Checkpoints are referred to by their folder names in [`../../checkpoints/MANIFEST.md`](../../checkpoints/MANIFEST.md)
-  (`ginio_rd_lfa_mse_nanobench`, ...). The flat names of the release bundle
+  (`nanobench_ginio_rd_lfa_mse`, ...). The flat names of the release bundle
   (`nanobench_ginio_rd_lfa_mse`, `tlio_eqnio_o2_ours`, ...) are accepted as aliases
   (`_paths.CKPT_ALIASES`); whichever folder exists under the checkpoint root is used.
 * Data layout is the one of the main README: `local_data/nanobench_processed_2nd_version`
@@ -60,15 +60,15 @@ format from `eqnio/TLIO-master/src/main_net.py --mode test`). Defaults name the 
 checkpoints; models whose outputs are absent are skipped.
 ```bash
 python scripts/paper/unified_eval.py \
-  --imueq_models ginio_rs_chol_mse_nanobench=ginio_rs_chol_mse_nanobench ginio_rd_nolfa_t55_nanobench=ginio_rd_nolfa_t55_nanobench \
-  --airio_pickle ginio_a_noatt_nanobench=airio/experiments/nanobench_noatt_vn_small/motion_body_noatt_vn_small/net_output.pickle
+  --imueq_models nanobench_ginio_rs_chol_mse=nanobench_ginio_rs_chol_mse nanobench_ginio_rd_t55=nanobench_ginio_rd_t55 \
+  --airio_pickle nanobench_ginio_a_noatt=airio/experiments/nanobench_noatt_vn_small/motion_body_noatt_vn_small/net_output.pickle
 # -> scripts/paper/outputs/unified/{all_models_metrics.json, summary.txt, per_sequence.csv, plots/<seq>.png}
 ```
 
 ### `round1_eval.py`, `round1_eval_small.py` -- Air-IO-family Table-2 rows (GPU recommended for inference; metrics CPU ok)
 Inputs: `airio/configs/Nanobench/motion_body_{noatt,rot}.conf` (+ `_vn_small` for GINIO-A) and the
-released `best_model.ckpt` (`airio_noatt_nanobench`, `airio_withatt_nanobench`,
-`ginio_a_noatt_nanobench`, `ginio_a_withatt_nanobench`), world-frame NanoBench.
+released `best_model.ckpt` (`nanobench_airio_noatt`, `nanobench_airio_withatt`,
+`nanobench_ginio_a_noatt`, `nanobench_ginio_a_withatt`), world-frame NanoBench.
 ```bash
 python scripts/paper/round1_eval.py --device cuda:0          # AirIO no-att / with-att (+ the unreleased 0.273M VN originals, skipped)
 python scripts/paper/round1_eval_small.py --device cuda:0    # GINIO-A no-att / with-att (Table 2)
@@ -102,11 +102,11 @@ python scripts/paper/run_phase_ab.py --phase B                # ID-SO(3) {30,60,
 Phase B is 4 models x 42 runs over the 17 test sequences.
 
 ### `run_phase_ab_airio.py`, `run_phase_ab_eqnio.py` -- the same sweeps for the other families (GPU recommended)
-`run_phase_ab_airio.py`: `airio_noatt_nanobench`, `airio_withatt_nanobench` (AirIO native) and
-`ginio_a_noatt_nanobench`, `ginio_a_withatt_nanobench` (released GINIO-A; see provenance note 4),
+`run_phase_ab_airio.py`: `nanobench_airio_noatt`, `nanobench_airio_withatt` (AirIO native) and
+`nanobench_ginio_a_noatt`, `nanobench_ginio_a_withatt` (released GINIO-A; see provenance note 4),
 body-frame NanoBench, no LFA. `run_phase_ab_eqnio.py`: the TorchScript traces
-`eqnio_o2_tlio_ours/model_torchscript.pt` (EqNIO O(2), our TLIO reference model) and
-`ginio_e_so3aug_tlio/model_torchscript.pt` (GINIO-E); converts body-frame IMU to gravity-aligned
+`tlio_eqnio_o2_ours/model_torchscript.pt` (EqNIO O(2), our TLIO reference model) and
+`nanobench_ginio_e_so3aug_tlio/model_torchscript.pt` (GINIO-E); converts body-frame IMU to gravity-aligned
 world frame as the TLIO filter does; scenarios `id_so3`, `mount_tilt`, `gravity_tilt`.
 ```bash
 python scripts/paper/run_phase_ab_airio.py --phase all
@@ -182,11 +182,11 @@ python scripts/paper/filter_connected_eval.py --dataset tlio --aggregate    # re
 ## Reproduction order
 
 1. Lie-Neuron Table-2 rows: `python src/main_net.py --mode test ... --out_dir test_outputs/<name>` for
-   `ginio_rs_chol_mse_nanobench` and `ginio_rd_nolfa_t55_nanobench` (commands in the main README;
+   `nanobench_ginio_rs_chol_mse` and `nanobench_ginio_rd_t55` (commands in the main README;
    window 1.0 / sample_freq 20 for the spectral model, window 0.675 / sample_freq 10 for trial 55),
    then `unified_eval.py`.
 2. Air-IO rows: `round1_eval.py`, `round1_eval_small.py` (GINIO-E: `eqnio/TLIO-master/src/main_net.py --mode test` on the
-   NanoBench body-frame data with the released `ginio_e_so3aug_tlio` checkpoint, then `unified_eval.py --eqnio_dir`).
+   NanoBench body-frame data with the released `nanobench_ginio_e_so3aug_tlio` checkpoint, then `unified_eval.py --eqnio_dir`).
 3. `build_v2_paper_quality.py` (default inputs reproduce the paper's canonical file; pass your own metrics to rebuild).
 4. Covariance ablation: `run_phase_ab.py --phase A`, `sigma_eq_error.py`, `sigma_eq_error_lfa_aware.py`,
    `nll_decompose_calib.py`, `aggregate_results.py`.
@@ -211,10 +211,10 @@ G19-G23) and `checkpoints/MANIFEST.md`; please read before quoting numbers.
    predictions) is implemented for the Air-IO family in `airio/evaluation/eval_idso3.py` (rotation
    angles U[0.2, pi]). The imu-equivariant-learning test transform `--test_perturb_type so3` of
    older code copies does not un-rotate predictions and is not that protocol.
-3. **GINIO-E numbers come from a TLIO-trained model.** `ginio_e_so3aug_tlio` was trained on TLIO
+3. **GINIO-E numbers come from a TLIO-trained model.** `nanobench_ginio_e_so3aug_tlio` was trained on TLIO
    golden with full-SO(3) augmentation (40 epochs) and evaluated zero-shot on NanoBench; it was
    never trained on NanoBench. The `EqNIO_O2` entry of `run_phase_ab_eqnio.py` is
-   `eqnio_o2_tlio_ours`, our own TLIO-trained O(2) reference model; the paper's EqNIO O(2)
+   `tlio_eqnio_o2_ours`, our own TLIO-trained O(2) reference model; the paper's EqNIO O(2)
    NanoBench row (0.828) used the EqNIO authors' public model, for which no checkpoint exists here.
    Both released traces are identified by the `out_dir` recorded in their `parameters.json`
    (`overnight/vn_so3_so3aug`, `overnight/o2_paper`).
@@ -227,12 +227,12 @@ G19-G23) and `checkpoints/MANIFEST.md`; please read before quoting numbers.
    VN-AirIO rows than the May-2026 `TABLE_B_cross_model.csv`. Likewise `canonical_v2.json`'s
    `VN_AirIO_*` entries (1.502 / 1.062) are the 0.273M originals (Supplement Table 5); the Table-2
    GINIO-A values (1.430 / 1.045) are in `reference_inputs/round1_nanobench_metrics_small.json`.
-5. **GINIO-RS and LFA.** The `parameters.json` of `ginio_rs_chol_mse_nanobench` records a `nolfa`
+5. **GINIO-RS and LFA.** The `parameters.json` of `nanobench_ginio_rs_chol_mse` records a `nolfa`
    training root while the paper labels the row body+LFA; MANIFEST note 2 reproduces 0.7887 with
    LFA applied at test time. `run_phase_ab.py` (and the Table-9 sweep) evaluates both spectral
    models **without** LFA (`lfa=False`, as in the original script); keep this in mind when comparing
    its `rmse_vel` with Table 2.
-6. **GINIO-RD.** Optuna trial 119 (0.581) was not archived; `ginio_rd_nolfa_t55_nanobench` (trial
+6. **GINIO-RD.** Optuna trial 119 (0.581) was not archived; `nanobench_ginio_rd_t55` (trial
    55, 0.600, window 0.675 s) is the closest released model. The covariance-ablation scripts only
    use the four 1.0 s-window Table-9 models.
 7. **Supplement Table 9 confound (G19).** The diagonal models (`ln_resnet`, FcBlock `bias=True`)

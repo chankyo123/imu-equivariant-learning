@@ -43,22 +43,22 @@ DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 MODELS = {
     'airio_native_noatt': dict(
         conf='configs/Nanobench/motion_body_noatt.conf',
-        ckpt='airio_noatt_nanobench',
+        ckpt='nanobench_airio_noatt',
         eq=False, withrot=False,
     ),
     'airio_native_rot': dict(
         conf='configs/Nanobench/motion_body_rot.conf',
-        ckpt='airio_withatt_nanobench',
+        ckpt='nanobench_airio_withatt',
         eq=False, withrot=True,
     ),
     'vn_airio_noatt': dict(
         conf='configs/Nanobench/motion_body_noatt_vn_small.conf',
-        ckpt='ginio_a_noatt_nanobench',
+        ckpt='nanobench_ginio_a_noatt',
         eq=True, withrot=False,
     ),
     'vn_airio_rot': dict(
         conf='configs/Nanobench/motion_body_rot_vn_small.conf',
-        ckpt='ginio_a_withatt_nanobench',
+        ckpt='nanobench_ginio_a_withatt',
         eq=True, withrot=True,
     ),
 }

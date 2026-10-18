@@ -21,8 +21,8 @@ Scenarios:
   gravity_tilt      -- same as id_so3 but with small deg points (1-15 deg), focused on
                       EqNIO O(2)'s gravity-alignment assumption
 
-Released TorchScript models (checkpoints/MANIFEST.md): EqNIO_O2 -> eqnio_o2_tlio_ours/model_torchscript.pt
-(formerly overnight/o2_paper), VN_EqNIO_SO3 -> ginio_e_so3aug_tlio/model_torchscript.pt (formerly
+Released TorchScript models (checkpoints/MANIFEST.md): EqNIO_O2 -> tlio_eqnio_o2_ours/model_torchscript.pt
+(formerly overnight/o2_paper), VN_EqNIO_SO3 -> nanobench_ginio_e_so3aug_tlio/model_torchscript.pt (formerly
 overnight/vn_so3_so3aug); both mappings are recorded in the released parameters.json `out_dir`.
 """
 import os, sys, json, time, argparse
@@ -42,12 +42,12 @@ GRAVITY = 9.80665  # m/s^2 along +z in world frame
 # ts: released folder under --ckpt_root (holds model_torchscript.pt)
 MODELS = {
     'EqNIO_O2': dict(
-        ts='eqnio_o2_tlio_ours',
+        ts='tlio_eqnio_o2_ours',
         arch='o2_frame',  # 2D frame predictor + 3D pred + 3D log_std
         window_size=200,
     ),
     'VN_EqNIO_SO3': dict(
-        ts='ginio_e_so3aug_tlio',
+        ts='nanobench_ginio_e_so3aug_tlio',
         arch='so3_frame',  # 3D frame + 3D pred + 3D log_std
         window_size=200,
     ),

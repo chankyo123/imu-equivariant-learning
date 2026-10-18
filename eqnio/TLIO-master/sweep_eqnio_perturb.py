@@ -36,12 +36,12 @@ SWEEP_OUT = "/tmp/eqnio_sweep"
 # (label, ckpt_dir). Server B swept: tlio_o2, tlio_o2_so3aug_80ep, ln_189, resnet_so3aug and
 # tlio_resnet_baseline_w1sec_e100. The shipped checkpoints (checkpoints/MANIFEST.md) cover the first,
 # third and fourth; add the others here if you retrain them.
-CKPT = os.path.join(REPO_ROOT, "checkpoints", "tlio")
+CKPT = os.path.join(REPO_ROOT, "checkpoints")
 MODELS_TLIO = [
-    ("tlio_o2",          f"{CKPT}/eqnio_o2"),
-    # ("tlio_o2_so3aug",   f"{CKPT}/eqnio_o2_so3aug_80ep"),        # not shipped
-    ("ln_189",           f"{CKPT}/ginio_w_ln189"),
-    ("resnet_so3aug",    f"{CKPT}/resnet_so3aug"),
+    ("tlio_o2",          f"{CKPT}/tlio_eqnio_o2"),
+    # ("tlio_o2_so3aug",   f"{CKPT}/tlio_eqnio_o2_so3aug_80ep"),        # not shipped
+    ("ln_189",           f"{CKPT}/tlio_ginio_w_ln189"),
+    ("resnet_so3aug",    f"{CKPT}/tlio_resnet_so3aug"),
     # ("tlio_resnet_baseline", f"{CKPT}/tlio_resnet_baseline_w1sec_e100"),  # not shipped
 ]
 

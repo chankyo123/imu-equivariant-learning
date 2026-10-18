@@ -126,7 +126,7 @@ def get_model(arch, net_config, input_dim=6, output_dim=3):
                 cov_head='diag'
             )
     # ---- ln189-anchored spectral/diagonal covariance heads (Fig. 5(b) matched pair) ----
-    # The ln189 TLIO checkpoint (checkpoints/tlio/ginio_w_ln189) is an `ln_resnet`
+    # The ln189 TLIO checkpoint (checkpoints/tlio_ginio_w_ln189) is an `ln_resnet`
     # (ln_conv_2regress_nochannelmix_bias.py, VNLeakyReLU slope 0.0). These archs keep that
     # backbone + mean head (loaded with strict=False, frozen with --freeze_mean) and add a fresh
     # covariance head so that a diagonal-vs-spectral comparison differs ONLY in the covariance

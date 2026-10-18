@@ -16,9 +16,9 @@ Supported --arch values:
 
 Outputs: <out-dir>/eq_error_<arch>.json + .txt
 
-Release defaults: vn_airio_diag -> checkpoints/ginio_a_noatt_nanobench/best_model.ckpt with
+Release defaults: vn_airio_diag -> checkpoints/nanobench_ginio_a_noatt/best_model.ckpt with
 --vn-class VNCodeNetMotionSmall (the original run used the unreleased 0.273M VNCodeNetMotion
-checkpoint); vn_eqnio_so3_frame -> checkpoints/ginio_e_so3aug_tlio/model_torchscript.pt (the original
+checkpoint); vn_eqnio_so3_frame -> checkpoints/nanobench_ginio_e_so3aug_tlio/model_torchscript.pt (the original
 run used the unreleased overnight/_existing_vn_so3_t0012 trace of the same architecture).
 """
 from __future__ import annotations
@@ -159,8 +159,8 @@ def run_eq_test(forward_fn, x: torch.Tensor, scalar: torch.Tensor | None,
 
 # (released folder per checkpoints/MANIFEST.md, file); resolved under --ckpt-root at run time
 DEFAULT_CKPTS = {
-    "vn_airio_diag": ("ginio_a_noatt_nanobench", "best_model.ckpt"),
-    "vn_eqnio_so3_frame": ("ginio_e_so3aug_tlio", "model_torchscript.pt"),
+    "vn_airio_diag": ("nanobench_ginio_a_noatt", "best_model.ckpt"),
+    "vn_eqnio_so3_frame": ("nanobench_ginio_e_so3aug_tlio", "model_torchscript.pt"),
     "chol": None,  # user must supply
 }
 
@@ -206,7 +206,7 @@ def main() -> int:
     p.add_argument("--batch", type=int, default=2)
     p.add_argument("--seqlen", type=int, default=128,
                    help="window length of the random test input; TorchScript traces have a fixed window, "
-                        "use 200 for the released TLIO-trained traces (ginio_e_so3aug_tlio, eqnio_o2_tlio_ours)")
+                        "use 200 for the released TLIO-trained traces (nanobench_ginio_e_so3aug_tlio, tlio_eqnio_o2_ours)")
     p.add_argument("--n-trials", type=int, default=8)
     p.add_argument("--seed", type=int, default=1000)
     p.add_argument("--out-dir", type=str, default=str(OUTPUT_DIR))

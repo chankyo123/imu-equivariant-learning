@@ -14,11 +14,11 @@ There are two execution modes:
 
 For mode=eval we use:
   - Diag (VN-AirIO body, propcov=True):
-      Nanobench: checkpoints/ginio_a_noatt_nanobench/best_model.ckpt (released GINIO-A; the original
+      Nanobench: checkpoints/nanobench_ginio_a_noatt/best_model.ckpt (released GINIO-A; the original
                  run used the unreleased 0.273M experiments/nanobench_noatt_vn checkpoint)
   - Spectral (VN-EqNIO SO(3)):
       Nanobench: TBD (no current Nanobench-trained SO(3) torchscript)
-      TLIO:      checkpoints/ginio_e_so3aug_tlio/model_torchscript.pt (released GINIO-E; the original
+      TLIO:      checkpoints/nanobench_ginio_e_so3aug_tlio/model_torchscript.pt (released GINIO-E; the original
                  run used the unreleased overnight/_existing_vn_so3_t0012 trace)
 
 Outputs: <out-dir>/head_only_<dataset>_<head>.json (one per model), plus
@@ -98,12 +98,12 @@ def main() -> int:
     p.add_argument("--mode", choices=["eval", "retrain-cmd"], required=True)
     p.add_argument("--dataset", choices=["nanobench", "tlio"], default="nanobench")
     p.add_argument("--diag-ckpt", default=None,
-                   help="path to VN-AirIO checkpoint (diag head); default: released ginio_a_noatt_nanobench")
+                   help="path to VN-AirIO checkpoint (diag head); default: released nanobench_ginio_a_noatt")
     p.add_argument("--vn-class", default="VNCodeNetMotionSmall",
                    choices=["VNCodeNetMotion", "VNCodeNetMotionSmall"],
                    help="vn_codenet class matching --diag-ckpt (Small = released GINIO-A)")
     p.add_argument("--spec-ts", default=None,
-                   help="path to VN-EqNIO SO(3) torchscript (spectral head); default for --dataset tlio: released ginio_e_so3aug_tlio")
+                   help="path to VN-EqNIO SO(3) torchscript (spectral head); default for --dataset tlio: released nanobench_ginio_e_so3aug_tlio")
     p.add_argument("--batch", type=int, default=2)
     p.add_argument("--seqlen", type=int, default=128,
                    help="window length of the random test input; use 200 when --spec-ts is one of the released "
@@ -126,10 +126,10 @@ def main() -> int:
     # Defaults
     ckpt_root = Path(args.ckpt_root)
     if args.diag_ckpt is None:
-        args.diag_ckpt = str(resolve_ckpt_dir("ginio_a_noatt_nanobench", ckpt_root) / "best_model.ckpt")
+        args.diag_ckpt = str(resolve_ckpt_dir("nanobench_ginio_a_noatt", ckpt_root) / "best_model.ckpt")
     if args.spec_ts is None:
         if args.dataset == "tlio":
-            args.spec_ts = str(resolve_ckpt_dir("ginio_e_so3aug_tlio", ckpt_root) / "model_torchscript.pt")
+            args.spec_ts = str(resolve_ckpt_dir("nanobench_ginio_e_so3aug_tlio", ckpt_root) / "model_torchscript.pt")
         else:
             print("[INFO] no Nanobench-trained SO(3) torchscript known; pass --spec-ts to compare on Nanobench")
             args.spec_ts = None

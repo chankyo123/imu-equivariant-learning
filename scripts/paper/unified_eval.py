@@ -55,20 +55,20 @@ NANO_ROOT = str(DATA_WORLD)
 IMUEQ_OUT = str(REPO / "test_outputs")
 DEFAULT_IMUEQ_MODELS = [
     # name=subdir under --imueq_out; subdir = --out_dir you gave `src/main_net.py --mode test`
-    "ginio_rd_nolfa_t55_nanobench=ginio_rd_nolfa_t55_nanobench",
-    "ginio_rs_chol_mse_nanobench=ginio_rs_chol_mse_nanobench",
-    "ginio_rs_chol_nll_nanobench=ginio_rs_chol_nll_nanobench",
-    "ginio_rd_lfa_mse_nanobench=ginio_rd_lfa_mse_nanobench",
-    "ginio_rd_lfa_nll_nanobench=ginio_rd_lfa_nll_nanobench",
+    "nanobench_ginio_rd_t55=nanobench_ginio_rd_t55",
+    "nanobench_ginio_rs_chol_mse=nanobench_ginio_rs_chol_mse",
+    "nanobench_ginio_rs_chol_nll=nanobench_ginio_rs_chol_nll",
+    "nanobench_ginio_rd_lfa_mse=nanobench_ginio_rd_lfa_mse",
+    "nanobench_ginio_rd_lfa_nll=nanobench_ginio_rd_lfa_nll",
 ]
 DEFAULT_AIRIO_PICKLES = [
-    f"airio_noatt_nanobench={AIRIO_ROOT}/experiments/nanobench_noatt/motion_body_noatt/net_output.pickle",
-    f"airio_withatt_nanobench={AIRIO_ROOT}/experiments/nanobench/motion_body_rot/net_output.pickle",
-    f"ginio_a_noatt_nanobench={AIRIO_ROOT}/experiments/nanobench_noatt_vn_small/motion_body_noatt_vn_small/net_output.pickle",
-    f"ginio_a_withatt_nanobench={AIRIO_ROOT}/experiments/nanobench_rot_vn_small/motion_body_rot_vn_small/net_output.pickle",
+    f"nanobench_airio_noatt={AIRIO_ROOT}/experiments/nanobench_noatt/motion_body_noatt/net_output.pickle",
+    f"nanobench_airio_withatt={AIRIO_ROOT}/experiments/nanobench/motion_body_rot/net_output.pickle",
+    f"nanobench_ginio_a_noatt={AIRIO_ROOT}/experiments/nanobench_noatt_vn_small/motion_body_noatt_vn_small/net_output.pickle",
+    f"nanobench_ginio_a_withatt={AIRIO_ROOT}/experiments/nanobench_rot_vn_small/motion_body_rot_vn_small/net_output.pickle",
 ]
 DEFAULT_EQNIO_DIRS = [
-    f"ginio_e_so3aug_tlio={REPO}/test_outputs/ginio_e_so3aug_tlio",
+    f"nanobench_ginio_e_so3aug_tlio={REPO}/test_outputs/nanobench_ginio_e_so3aug_tlio",
 ]
 
 

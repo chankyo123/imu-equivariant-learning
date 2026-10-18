@@ -4,7 +4,7 @@
 # Ported from Server B (chankyokim-Alienware). All machine-specific paths are now variables
 # that can be overridden from the environment; defaults are relative to the repository root
 # (GINIO/). PY = python interpreter, MODEL_DIR = directory with model_torchscript.pt +
-# parameters.json (e.g. checkpoints/tlio/ginio_w_ln189), ROOT = dataset root, OUT = output root.
+# parameters.json (e.g. checkpoints/tlio_ginio_w_ln189), ROOT = dataset root, OUT = output root.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$HERE/../../.." && pwd)"

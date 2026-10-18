@@ -37,37 +37,37 @@ OUTPUT_DIR = Path(os.environ.get("GINIO_PAPER_OUT", PAPER_DIR / "outputs"))
 TEST_LIST_FILE = PAPER_DIR / "nano_test_list.txt"       # the 17 NanoBench test sequences (= Archive/data/nano_test_list.txt)
 REFERENCE_INPUTS = PAPER_DIR / "reference_inputs"
 
-# MANIFEST.md name -> alternative folder names (flat release-bundle scheme of RENAMES.txt).
+# Release folder name (checkpoints/MANIFEST.md, flat <benchmark>_<row>_<variant> scheme) -> older staging names.
 # resolve_ckpt_dir() returns the first of (name, *aliases) that exists under the checkpoint root.
 CKPT_ALIASES = {
-    "airio_noatt_nanobench": ["nanobench_airio_noatt"],
-    "airio_withatt_nanobench": ["nanobench_airio_withatt"],
-    "ginio_a_noatt_nanobench": ["nanobench_ginio_a_noatt"],
-    "ginio_a_withatt_nanobench": ["nanobench_ginio_a_withatt"],
-    "ginio_e_so3aug_tlio": ["nanobench_ginio_e_so3aug_tlio"],
-    "eqnio_o2_tlio_ours": ["tlio_eqnio_o2_ours"],
-    "ginio_rd_nolfa_t55_nanobench": ["nanobench_ginio_rd_t55"],
-    "ginio_rs_chol_mse_nanobench": ["nanobench_ginio_rs_chol_mse"],
-    "ginio_rs_chol_nll_nanobench": ["nanobench_ginio_rs_chol_nll"],
-    "ginio_rd_lfa_mse_nanobench": ["nanobench_ginio_rd_lfa_mse"],
-    "ginio_rd_lfa_nll_nanobench": ["nanobench_ginio_rd_lfa_nll"],
+    "nanobench_airio_noatt": ["airio_noatt_nanobench"],
+    "nanobench_airio_withatt": ["airio_withatt_nanobench"],
+    "nanobench_ginio_a_noatt": ["ginio_a_noatt_nanobench"],
+    "nanobench_ginio_a_withatt": ["ginio_a_withatt_nanobench"],
+    "nanobench_ginio_e_so3aug_tlio": ["ginio_e_so3aug_tlio"],
+    "tlio_eqnio_o2_ours": ["eqnio_o2_tlio_ours"],
+    "nanobench_ginio_rd_t55": ["ginio_rd_nolfa_t55_nanobench"],
+    "nanobench_ginio_rs_chol_mse": ["ginio_rs_chol_mse_nanobench"],
+    "nanobench_ginio_rs_chol_nll": ["ginio_rs_chol_nll_nanobench"],
+    "nanobench_ginio_rd_lfa_mse": ["ginio_rd_lfa_mse_nanobench"],
+    "nanobench_ginio_rd_lfa_nll": ["ginio_rd_lfa_nll_nanobench"],
 }
 
 # Archive/checkpoints/<old name>  ->  checkpoints/<released folder>   (Supplement Table 9 models)
 RELEASED_LN = {
-    "ln_resnet_lfa_MSE": "ginio_rd_lfa_mse_nanobench",
-    "ln_resnet_lfa_NLL": "ginio_rd_lfa_nll_nanobench",
-    "ln_resnet_chol_MSE": "ginio_rs_chol_mse_nanobench",
-    "ln_resnet_chol_NLL": "ginio_rs_chol_nll_nanobench",
+    "ln_resnet_lfa_MSE": "nanobench_ginio_rd_lfa_mse",
+    "ln_resnet_lfa_NLL": "nanobench_ginio_rd_lfa_nll",
+    "ln_resnet_chol_MSE": "nanobench_ginio_rs_chol_mse",
+    "ln_resnet_chol_NLL": "nanobench_ginio_rs_chol_nll",
 }
 
 # Air-IO experiment dir (relative to airio/, as used by inference_motion.py) -> released folder.
 # The two 0.273M "original" VN-AirIO models (Supplement Table 5) are not released (MANIFEST note 5).
 AIRIO_RELEASED = {
-    "experiments/nanobench_noatt/motion_body_noatt": "airio_noatt_nanobench",
-    "experiments/nanobench/motion_body_rot": "airio_withatt_nanobench",
-    "experiments/nanobench_noatt_vn_small/motion_body_noatt_vn_small": "ginio_a_noatt_nanobench",
-    "experiments/nanobench_rot_vn_small/motion_body_rot_vn_small": "ginio_a_withatt_nanobench",
+    "experiments/nanobench_noatt/motion_body_noatt": "nanobench_airio_noatt",
+    "experiments/nanobench/motion_body_rot": "nanobench_airio_withatt",
+    "experiments/nanobench_noatt_vn_small/motion_body_noatt_vn_small": "nanobench_ginio_a_noatt",
+    "experiments/nanobench_rot_vn_small/motion_body_rot_vn_small": "nanobench_ginio_a_withatt",
     "experiments/nanobench_noatt_vn/motion_body_noatt_vn": None,
     "experiments/nanobench_rot_vn/motion_body_rot_vn": None,
 }
@@ -75,8 +75,8 @@ AIRIO_RELEASED = {
 # TorchScript models of the EqNIO fork: overnight run dir -> released folder (confirmed by the
 # `out_dir` recorded in each released parameters.json).
 EQNIO_RELEASED = {
-    "o2_paper": "eqnio_o2_tlio_ours",            # EqNIO O(2) reference model trained by us (not a paper row)
-    "vn_so3_so3aug": "ginio_e_so3aug_tlio",      # GINIO-E (TLIO-trained, full-SO(3) augmentation)
+    "o2_paper": "tlio_eqnio_o2_ours",            # EqNIO O(2) reference model trained by us (not a paper row)
+    "vn_so3_so3aug": "nanobench_ginio_e_so3aug_tlio",      # GINIO-E (TLIO-trained, full-SO(3) augmentation)
     "_existing_vn_so3_t0012": None,              # earlier SO(3) run used by some scripts; not released
 }
 

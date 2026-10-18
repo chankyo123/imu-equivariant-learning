@@ -477,7 +477,9 @@ def net_train(args):
         _cov_type0 = args.cov_type
     else:
         _al = (args.arch or "").lower()
-        _cov_type0 = 'eq_chol' if _al == 'ln_resnet_chol' else ('eq_spec' if _al == 'ln_resnet_cov' else 'diag')
+        # spectral heads: ln_resnet_cov and the ln189-anchored speccov archs (their *_diag variants are 'diag')
+        _cov_type0 = 'eq_chol' if _al == 'ln_resnet_chol' else (
+            'eq_spec' if _al in ('ln_resnet_cov', 'ln189_speccov', 'ln189_speccov_s0') else 'diag')
 
     # ---- freeze_mean: load a base checkpoint, freeze backbone+mean, train ONLY the cov head ----
     freeze_cov_keys = None
@@ -491,8 +493,11 @@ def net_train(args):
         else:
             logging.warning("[freeze_mean] no valid --model_path base; freezing a randomly-init mean!")
         COVKEYS = {
+            # pca_cov archs use output_block2..7; the ln189_speccov* archs use spec_V*/spec_e*.
+            # Both prefixes are listed (each arch only has one set; the other is a no-op).
             'eq_spec': ('output_block2', 'output_block3', 'output_block4',
-                        'output_block5', 'output_block6', 'output_block7', 'inv_head_shared'),
+                        'output_block5', 'output_block6', 'output_block7', 'inv_head_shared',
+                        'spec_V', 'spec_e'),
             'diag':    ('output_block_diag',),
             'eq_chol': ('output_block_a1', 'output_block_a2', 'output_block_a3', 'log_a_scale'),
         }[_cov_type0]
@@ -554,7 +559,8 @@ def net_train(args):
     best_val_loss = np.inf
     consumed_times = []
     consumed_gpu = []
-    
+    time_mem_log = osp.join(args.out_dir, 'time_mem_log.txt')  # defined before the loop (robust to 0-epoch runs)
+
     for epoch in range(start_epoch + 1, args.epochs):
         signal.signal(
             signal.SIGINT, partial(stop_signal_handler, args, epoch, network, optimizer)
@@ -574,10 +580,10 @@ def net_train(args):
             arch_lower = (args.arch or "").lower()
             if arch_lower == "ln_resnet_chol":
                 cov_type = 'eq_chol'
-            elif arch_lower == "ln_resnet_cov":
+            elif arch_lower in ("ln_resnet_cov", "ln189_speccov", "ln189_speccov_s0"):
                 cov_type = 'eq_spec'
             else:
-                cov_type = 'diag'
+                cov_type = 'diag'   # incl. ln_resnet_cov_diag, ln189_speccov*_diag, resnet, imunet, ln_resnet
         if epoch == 1:  # 한 번만 로깅
             logging.info(f"Using cov_type = {cov_type}")
 
@@ -619,7 +625,9 @@ def net_train(args):
         else:
             save_model(args, epoch, network, optimizer, best=False)
             
-        if epoch in {8,9,19,49, 80, 90, 95, 96, 98, 99, 109, 119, 129, 149, 159, 179, 189, 195, 199, 209,219,229,239,249,259,269,299, 399}:
+        if epoch in {8,9,19,49, 80, 90, 95, 96, 98, 99, 109, 119, 129, 149, 159, 179, 189, 195, 199, 209,219,229,239,249,259,269,299, 399} \
+           or os.environ.get("SAVE_ALL_EPOCHS", "0") == "1":
+            # SAVE_ALL_EPOCHS=1 -> checkpoint EVERY epoch (per-epoch filter overfitting sweep).
             save_model(args, epoch, network, optimizer, best=False, interrupt=False)
     
     mean_epoch_time = np.mean(consumed_times)

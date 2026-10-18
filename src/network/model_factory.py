@@ -44,6 +44,7 @@ from network.ln_conv_2regress_nochannelmix_slope_1_pca_cov import (
 # from network.model_vn_resnet_2 import VN_BasicBlock1D, VN_ResNet1D
 
 from network.model_resnet import BasicBlock1D, ResNet1D
+from network.model_imunet import IMUNet
 # from network.model_resnet_2res_nodrop import BasicBlock1D, ResNet1D
 
 
@@ -60,6 +61,9 @@ def get_model(arch, net_config, input_dim=6, output_dim=3):
         network = ResNet1D(
             BasicBlock1D, input_dim, output_dim, [2, 2, 2, 2], net_config["in_dim"]
         )
+    elif arch == "imunet":
+        # IMUNet baseline (depthwise-separable 1D CNN); (mean, logstd) head -> cov_type='diag' path.
+        network = IMUNet(input_dim, output_dim)
     elif arch == "vn_resnet":
         network = VN_ResNet1D(
             # VN_BasicBlock1D, input_dim, output_dim, [2, 2, 2, 2], net_config["in_dim"]
@@ -107,6 +111,57 @@ def get_model(arch, net_config, input_dim=6, output_dim=3):
                 net_config["in_dim"],
                 cov_head='diag'
             )
+    # ---- ln189-anchored spectral/diagonal covariance heads (Fig. 5(b) matched pair) ----
+    # The ln189 TLIO checkpoint (checkpoints/tlio/ginio_w_ln189) is an `ln_resnet`
+    # (ln_conv_2regress_nochannelmix_bias.py, VNLeakyReLU slope 0.0). These archs keep that
+    # backbone + mean head (loaded with strict=False, frozen with --freeze_mean) and add a fresh
+    # covariance head so that a diagonal-vs-spectral comparison differs ONLY in the covariance
+    # parametrization. Use the `_s0` variants: they subclass the deployed slope-0.0 backbone.
+    # `ln189_speccov` / `ln189_speccov_diag` subclass the slope-0.1 backbone
+    # (ln_conv_2regress_nochannelmix_slope_1_bias.py); the parameter names are identical, so the
+    # ln189 checkpoint loads, but the forward pass differs from the deployed model (NN median ATE
+    # 1.879 vs 0.906). They are kept only so that older runs can be reproduced.
+    elif arch == "ln189_speccov":
+            from network.ln_conv_2regress_nochannelmix_bias_speccov import (
+                SO3EquivariantReluBracketLayers_speccov)
+            from network.ln_conv_2regress_nochannelmix_slope_1_bias import (
+                LN_BasicBlock1D as LN_BasicBlock1D_189)
+            network = SO3EquivariantReluBracketLayers_speccov(
+                LN_BasicBlock1D_189,
+                input_dim, output_dim,
+                [2, 2, 2, 2],
+                net_config["in_dim"],
+                cov_head='spectral'
+            )
+    elif arch == "ln189_speccov_diag":
+            # matched-pair DIAGONAL arm on the slope-0.1 backbone (coordinate-frame diagonal head).
+            from network.ln_conv_2regress_nochannelmix_bias_speccov import (
+                SO3EquivariantReluBracketLayers_speccov)
+            from network.ln_conv_2regress_nochannelmix_slope_1_bias import (
+                LN_BasicBlock1D as LN_BasicBlock1D_189d)
+            network = SO3EquivariantReluBracketLayers_speccov(
+                LN_BasicBlock1D_189d,
+                input_dim, output_dim,
+                [2, 2, 2, 2],
+                net_config["in_dim"],
+                cov_head='diag'
+            )
+    elif arch == "ln189_speccov_s0":
+            # ln189's DEPLOYED slope-0.0 backbone + mean (ln_conv_2regress_nochannelmix_bias) + fresh
+            # spectral cov head. Load the ln189 checkpoint (strict=False) + --freeze_mean -> the mean is
+            # forward-identical to the deployed ln189. Trains ONLY the spectral head.
+            from network.ln_conv_2regress_nochannelmix_bias_speccov_slope0 import (
+                SO3EquivariantReluBracketLayers_speccov_s0)
+            network = SO3EquivariantReluBracketLayers_speccov_s0(
+                LN_BasicBlock1D, input_dim, output_dim, [2, 2, 2, 2],
+                net_config["in_dim"], cov_head='spectral')
+    elif arch == "ln189_speccov_s0_diag":
+            # matched-pair DIAGONAL arm on the SAME slope-0.0 backbone / frozen ln189 mean.
+            from network.ln_conv_2regress_nochannelmix_bias_speccov_slope0 import (
+                SO3EquivariantReluBracketLayers_speccov_s0)
+            network = SO3EquivariantReluBracketLayers_speccov_s0(
+                LN_BasicBlock1D, input_dim, output_dim, [2, 2, 2, 2],
+                net_config["in_dim"], cov_head='diag')
     elif arch == "ln_resnet_chol":
         # Equivariant Cholesky-style covariance head (A only; Sigma = A A^T + eps*I)
         network = SO3EquivariantReluBracketLayers_chol(

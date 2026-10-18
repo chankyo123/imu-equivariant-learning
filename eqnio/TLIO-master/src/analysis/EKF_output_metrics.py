@@ -88,7 +88,7 @@ def calculate_ekf_metrics(exp_list,gt_path_main,output_file_name):
             if os.path.isfile(dir_path+'/'+folder):
                 continue
             else:
-                if os.path.exists(dir_path+'/'+folder+'/not_vio_state.txt') or os.path.exists(dir_path+folder+'/not_vio_state.txt.npy'):
+                if os.path.exists(dir_path+'/'+folder+'/not_vio_state.txt') or os.path.exists(dir_path+'/'+folder+'/not_vio_state.txt.npy'):
                     # kf_data = np.loadtxt(dir_path+'/'+folder+'/not_vio_state.txt', delimiter=",")
                     txt_path = dir_path+'/'+folder+'/not_vio_state.txt'
                     py_path = dir_path+'/'+folder+'/not_vio_state.txt.npy'

@@ -136,6 +136,21 @@ def compute_metrics_and_plotting(args, net_attr_dict, traj_attr_dict, arch_type)
     # get ATE
     diff_pos = pos_pred - pos_gt
     ate = np.mean(np.linalg.norm(diff_pos, axis=1))
+
+    # Umeyama-aligned ATE (R+t, no scale); `ate` above is the TLIO-style mean L2 position error.
+    try:
+        _mu_s, _mu_t = pos_pred.mean(0), pos_gt.mean(0)
+        _src_c, _tgt_c = pos_pred - _mu_s, pos_gt - _mu_t
+        _H = _src_c.T @ _tgt_c
+        _U, _S, _Vt = np.linalg.svd(_H)
+        _d = float(np.sign(np.linalg.det(_Vt.T @ _U.T)))
+        _R = _Vt.T @ np.diag([1.0, 1.0, _d]) @ _U.T
+        _t = _mu_t - _R @ _mu_s
+        _aligned = (_R @ pos_pred.T).T + _t
+        _err = np.linalg.norm(_aligned - pos_gt, axis=1)
+        ate_um = float(np.sqrt((_err ** 2).mean()))
+    except Exception:
+        ate_um = float('nan')
     # get RMHE (yaw)
     diff_eul = wrap_rpy(eul_pred - eul_gt)
     rmhe = np.sqrt(np.mean(diff_eul[:, 2] ** 2))
@@ -159,6 +174,7 @@ def compute_metrics_and_plotting(args, net_attr_dict, traj_attr_dict, arch_type)
         "ronin": {
             "rmse": rmse,
             "ate": ate,
+            "ate_um": ate_um,
             "rmhe": rmhe,
             "drift_pos (m/m)": drift_ratio,
             "drift_yaw (deg/s)": drift_ang_ratio,
@@ -765,8 +781,11 @@ def net_test(args):
                 theta_range_deg = args.perturb_gravity_theta_range,
                 dataloader_bias_gravity_aug = args.dataloader_bias_gravity_aug,
                 accel_bias_range = args.accel_bias_range,
-                gyro_bias_range = args.gyro_bias_range
+                gyro_bias_range = args.gyro_bias_range,
+                lfa_perturb_max_deg = getattr(args, "lfa_perturb_max_deg", 0.0),
+                lfa_perturb_mode = getattr(args, "lfa_perturb_mode", "smooth"),
             )
+            seq_dataset.so3_test_deg = float(getattr(args, "so3_test_deg", 0.0))
 
             seq_loader = DataLoader(seq_dataset, batch_size=args.batch_size, shuffle=False)
 

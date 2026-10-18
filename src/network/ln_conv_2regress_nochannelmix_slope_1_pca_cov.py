@@ -572,7 +572,11 @@ class SO3EquivariantReluBracketLayers_cov(nn.Module):
         mean = self.output_block1(x)  #B,3
         if getattr(self, 'cov_head', 'spectral') == 'diag':
             # frozen-mean diagonal baseline: coordinate-frame log-std, NO orientation V
+            # Clamp to the SAME range as the spectral head (self.log_sigma_min/max) so the matched
+            # pair is fair; without this the diag head diverged (std up to ~1.9e4 m) and blew up
+            # the filter (Server-B rebuttal diag-clamp fix).
             diag_logstd = self.output_block_diag(x)   # (B,3)
+            diag_logstd = torch.clamp(diag_logstd, min=self.log_sigma_min, max=self.log_sigma_max)
             return mean, diag_logstd
 
         

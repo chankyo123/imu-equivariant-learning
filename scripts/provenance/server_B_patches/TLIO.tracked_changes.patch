@@ -1,0 +1,95 @@
+diff --git a/src/network/test.py b/src/network/test.py
+index 81f2980..94bf320 100644
+--- a/src/network/test.py
++++ b/src/network/test.py
+@@ -395,6 +395,17 @@ def get_inference(network, data_loader, device, epoch):
+         sample = to_device(sample, device)
+         feat = sample["feats"]["imu0"]
+         
++        # ==========================================================
++        # [수정] 네트워크 Forward 직전에 첫 번째 배치(bid==0)에서만 1번 측정
++        # ==========================================================
++        if bid == 0:
++            import thop
++            # 공정성을 위해 배치 사이즈를 1로 통일하여 측정
++            dummy_feat = feat[0:1, ...].clone() 
++            macs, params = thop.profile(network, inputs=(dummy_feat, ), verbose=False)
++            print(f"\n{'='*50}\n[Ours Model] FLOPs(MACs): {macs / 1e6:.2f} M, Params: {params / 1e6:.2f} M\n{'='*50}\n")
++        # ==========================================================
++        
+         pred, pred_cov = network(feat)
+ 
+         targ = sample["targ_dt_World"][:,-1,:]
+diff --git a/src/tracker/imu_tracker.py b/src/tracker/imu_tracker.py
+index d945b04..ef59609 100644
+--- a/src/tracker/imu_tracker.py
++++ b/src/tracker/imu_tracker.py
+@@ -1,11 +1,13 @@
+ #!/usr/bin/env python3
+ 
+ import json
++import os
+ from typing import Optional
+ 
+ import numpy as np
+ from numba import jit
+ from scipy.interpolate import interp1d
++from scipy.spatial.transform import Rotation
+ from tracker.imu_buffer import ImuBuffer
+ from tracker.imu_calib import ImuCalib
+ from tracker.meas_source_torchscript import MeasSourceTorchScript
+@@ -120,6 +122,19 @@ class ImuTracker:
+ 
+         self.imu_buffer = ImuBuffer()
+ 
++        # --- rebuttal: filter-connected attitude-error sweep hook (same as imu-eq tracker) ---
++        # Inject a CONSTANT tilt error into the attitude used to express the network input frame.
++        # env ATT_ERR_DEG (deg) + ATT_ERR_AXIS ('x'/'y'/'z'; x/y = gravity-TILT). Normal runs untouched.
++        _att_deg = float(os.environ.get("ATT_ERR_DEG", "0") or "0")
++        _att_axis = os.environ.get("ATT_ERR_AXIS", "x")
++        if abs(_att_deg) > 1e-9:
++            _ax = {"x": [1.0, 0.0, 0.0], "y": [0.0, 1.0, 0.0], "z": [0.0, 0.0, 1.0]}.get(
++                _att_axis, [1.0, 0.0, 0.0])
++            self._att_err_R = Rotation.from_rotvec(np.deg2rad(_att_deg) * np.array(_ax)).as_matrix()
++            logging.info(f"[ATT-SWEEP] injecting {_att_deg} deg about {_att_axis} into net-input frame")
++        else:
++            self._att_err_R = None
++
+         #  This callback is called at first update if set
+         self.callback_first_update = None
+         # This callback can be use to bypass network use for measurement
+@@ -151,6 +166,9 @@ class ImuTracker:
+         assert net_acc.shape[0] == self.net_input_size
+         # get data from filter
+         R_oldest_state_wfb, _ = self.filter.get_past_state(t_oldest_state_us)  # 3 x 3
++        # rebuttal attitude-error sweep: corrupt the attitude estimate feeding the net-input frame
++        if getattr(self, "_att_err_R", None) is not None:
++            R_oldest_state_wfb = self._att_err_R @ R_oldest_state_wfb
+         # change the input of the network to be in local frame
+         ri_z = compute_euler_from_matrix(R_oldest_state_wfb, "xyz", extrinsic=True)[
+             0, 2
+diff --git a/src/tracker/meas_source_torchscript.py b/src/tracker/meas_source_torchscript.py
+index a25d6ca..e72632f 100644
+--- a/src/tracker/meas_source_torchscript.py
++++ b/src/tracker/meas_source_torchscript.py
+@@ -48,11 +48,17 @@ class MeasSourceTorchScript:
+                     meas_cov = meas_cov[:, -1]
+ 
+             assert meas.dim() == 2  # [B,3]
+-            assert meas_cov.dim() == 2
+ 
+             meas = meas.cpu().detach().numpy()
+-            meas_cov[meas_cov < -4] = -4  # exp(-3) =~ 0.05
+-            meas_cov = DiagonalParam.vec2Cov(meas_cov).cpu().detach().numpy()[0, :, :]
++            if meas_cov.dim() == 3:
++                # FULL covariance [B,3,3] passthrough (spectral-cov experiment): the network
++                # emits the full 3x3 measurement covariance directly, so the SCEKF update uses
++                # off-diagonal (equivariant) structure instead of a diagonalized version.
++                meas_cov = meas_cov.cpu().detach().numpy()[0, :, :]
++            else:
++                assert meas_cov.dim() == 2
++                meas_cov[meas_cov < -4] = -4  # exp(-3) =~ 0.05
++                meas_cov = DiagonalParam.vec2Cov(meas_cov).cpu().detach().numpy()[0, :, :]
+             meas = meas.reshape((3, 1))
+ 
+             # Our equivalent of zero position update (TODO need stronger prior to keep it still)

@@ -46,6 +46,8 @@ class MemMappedSequencesDataset(Dataset, SequencesDataset):
         gyro_bias_range = 0,
         so3_augment = False,
         so3_augment_max_deg = 180.0,
+        lfa_perturb_max_deg = 0.0,
+        lfa_perturb_mode = "smooth",
     ):
         SequencesDataset.__init__(
             self,
@@ -63,6 +65,8 @@ class MemMappedSequencesDataset(Dataset, SequencesDataset):
             gyro_bias_range = gyro_bias_range,
             so3_augment = so3_augment,
             so3_augment_max_deg = so3_augment_max_deg,
+            lfa_perturb_max_deg = lfa_perturb_max_deg,
+            lfa_perturb_mode = lfa_perturb_mode,
         )
 
         self.use_index_map = use_index_map # If false, calculate indices on the fly to save mem

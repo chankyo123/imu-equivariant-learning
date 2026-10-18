@@ -112,6 +112,35 @@ if __name__ == "__main__":
         "--mahalanobis_fail_scale", type=float, default=0
     )  # if nonzero then mahalanobis gating test would scale the covariance by this scale if failed
 
+    # ----------------------- test-time perturbation -----------------------
+    perturb_groups = parser.add_argument_group("test perturbation")
+    perturb_groups.add_argument(
+        "--test_perturb_type", type=str, default="none",
+        choices=["none", "gravity", "lfa", "so3"],
+        help="Inject perturbation into raw IMU stream before EKF/network see it. "
+             "'gravity': fixed horizontal-axis rotation per sequence (sensor mis-mount). "
+             "'lfa': smooth time-varying random rotation with peak |rvec|=test_perturb_deg. "
+             "'so3': fixed random SO(3) rotation of magnitude test_perturb_deg per sequence."
+    )
+    perturb_groups.add_argument(
+        "--test_perturb_deg", type=float, default=0.0,
+        help="Perturbation magnitude in degrees (gravity: max uniform tilt; lfa: per-sequence peak)."
+    )
+    perturb_groups.add_argument(
+        "--test_perturb_seed", type=int, default=0,
+        help="RNG seed offset for reproducible perturbations across runs."
+    )
+    perturb_groups.add_argument(
+        "--test_list", type=str, default="test_list.txt",
+        help="Test list filename relative to root_dir."
+    )
+    perturb_groups.add_argument(
+        "--so3_rot_path", type=str, default=None,
+        help="Path pattern for per-seq R_so3 .npy. Use {seq} placeholder. "
+             "When set, IMU CSV is assumed already rotated by R_so3; "
+             "filter init R is right-multiplied by R_so3^T for equivariance test."
+    )
+
     # ----------------------- debug params -----------------------
     debug_groups = parser.add_argument_group("debug")
     # covariance alternatives (note: if use_vio_meas is true, meas constant with default value 1e-4)
@@ -151,7 +180,7 @@ if __name__ == "__main__":
     logging.info("Program options:")
     logging.info(pprint(vars(args)))
     # run filter
-    data_list = os.path.join(args.root_dir, "test_list.txt")
+    data_list = os.path.join(args.root_dir, args.test_list)
     with open(data_list) as f:
         data_names = [
             s.strip().split("," or " ")[0]
@@ -167,11 +196,34 @@ if __name__ == "__main__":
     with open(args.out_dir + "/parameters.json", "w") as parameters_file:
         parameters_file.write(json.dumps(param_dict, indent=4, sort_keys=True))
 
+    def _maybe_patch_so3(runner, seq_name):
+        """Equivariance protocol: when --so3_rot_path is set, right-multiply every
+        VIO-derived rotation by R_so3^T at filter init. With raw IMU also rotated
+        by R_so3 (gyr'=R g, acc'=R a), the world trajectory is invariant
+        (R_W_B'(t)=R_W_B(t) @ R^T cancels with R applied to IMU)."""
+        if not getattr(args, "so3_rot_path", None):
+            return
+        path = args.so3_rot_path.replace("{seq}", seq_name)
+        R_so3 = np.load(path)
+        assert R_so3.shape == (3, 3), f"R_so3 must be 3x3, got {R_so3.shape}"
+        Rt = R_so3.T
+        orig = runner.reset_filter_state_from_vio
+        def patched(this):
+            orig(this)
+            st = this.filter.state
+            for i in range(len(st.si_Rs)):
+                st.si_Rs[i] = st.si_Rs[i] @ Rt
+            st.s_R = st.s_R @ Rt
+        runner.reset_filter_state_from_vio = patched
+        logging.info(f"SO(3) equivariance test: applied R_so3^T from {path}; det={np.linalg.det(R_so3):.6f}")
+
     # load offline calibration for IMU
     if args.dataset_number is not None:
         logging.info("Running in one-shot mode")
         logging.info("Using dataset {}".format(data_names[args.dataset_number]))
-        trackerRunner = ImuTrackerRunner(args, data_names[args.dataset_number])
+        seq_name = data_names[args.dataset_number]
+        trackerRunner = ImuTrackerRunner(args, seq_name)
+        _maybe_patch_so3(trackerRunner, seq_name)
         trackerRunner.run_tracker(args, args.dataset_number)
     else:
         logging.info("Running in batch mode")

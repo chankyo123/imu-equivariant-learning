@@ -1,0 +1,30 @@
+# Verbatim Server-B record (EqNIO/EKF_RESULTS_SUMMARY.txt, Aug 2026). The two file paths at the
+# bottom refer to Server B; the CSV/figure are not part of this repository.
+
+EKF 2x2 Ablation — Final Results (mean over 36 sequences)
+==============================================================================
+
+Configuration                   Std ATE   so3_60 ATE    Degr.
+------------------------------------------------------------------------------
+O(2) (no aug)                     1.574       13.795    8.76x
+O(2) + SO(3) aug                  1.824       10.657    5.84x
+SO(3) (ours, no aug)              1.848       16.258    8.80x
+SO(3) + SO(3) aug                 1.694       13.883    8.19x
+
+RTE / drift breakdown:
+Configuration                   Std RTE    Rot RTE   Std Drift%   Rot Drift%
+------------------------------------------------------------------------------
+O(2) (no aug)                     0.116      0.678       1.276%       3.920%
+O(2) + SO(3) aug                  0.122      0.581       1.461%       3.200%
+SO(3) (ours, no aug)              0.130      0.632       1.441%       4.176%
+SO(3) + SO(3) aug                 0.129      0.636       1.321%       3.770%
+
+For comparison, NN-only ATE was:
+  O(2) (no aug)                std=2.37  so3_60=36.54  (degr. 15.42x)
+  O(2) + SO(3) aug             std=2.80  so3_60=2.28  (degr. 0.81x)
+  SO(3) (ours, no aug)         std=2.94  so3_60=11.27  (degr. 3.83x)
+  SO(3) + SO(3) aug            std=2.84  so3_60=2.47  (degr. 0.87x)
+
+Files:
+  CSV: /home/chankyokim/Desktop/code2/imu-previous-work/EqNIO/ekf_2x2_table.csv
+  Figure: /home/chankyokim/Desktop/code2/imu-previous-work/EqNIO/figure_ekf_2x2_ablation.png

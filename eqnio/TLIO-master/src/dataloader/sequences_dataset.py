@@ -47,6 +47,8 @@ class SequencesDataset:
         gyro_bias_range = 0,
         so3_augment = False,           # NEW: enable full random SO(3) rotation per window
         so3_augment_max_deg = 180.0,   # NEW: max rotation magnitude in degrees (180 = uniform SO(3))
+        lfa_perturb_max_deg = 0.0,     # test-time LFA-style time-varying rotation noise (peak deg)
+        lfa_perturb_mode = "smooth",   # "smooth" or "ramp"
 
     ):
         self.data_path = data_path
@@ -65,7 +67,10 @@ class SequencesDataset:
         self.gyro_bias_range = gyro_bias_range
         self.so3_augment = so3_augment
         self.so3_augment_max_deg = so3_augment_max_deg
-        
+        self.lfa_perturb_max_deg = lfa_perturb_max_deg
+        self.lfa_perturb_mode = lfa_perturb_mode
+        self.so3_test_deg = 0.0  # set from outside (test.py) if so3 perturbation requested
+
         # The list of relevant sensor file names based on data_style
         self.sensor_file_basenames = self.get_sensor_file_basenames()
             
@@ -483,6 +488,31 @@ class SequencesDataset:
             # Update R_world_gla bookkeeping so that test code that uses it remains consistent.
             # We left-multiply by R_so3 (since the world frame as observed by the IMU has been rotated).
             R_world_gla = R_so3 @ R_world_gla
+
+        # Test-time LFA-style time-varying rotation perturbation (per-sample, anchored at last T)
+        if getattr(self, "lfa_perturb_max_deg", 0.0) > 0.0:
+            from .data_transform import TransformLFARelativeRotationNoise
+            _lfa_tf = TransformLFARelativeRotationNoise(
+                max_deg=self.lfa_perturb_max_deg, mode=self.lfa_perturb_mode,
+            )
+            _imu_t = torch.from_numpy(feats['imu0']) if isinstance(feats['imu0'], np.ndarray) else feats['imu0']
+            _imu_t = _imu_t.float()
+            _imu_t = _lfa_tf.apply_to_imu(_imu_t)
+            feats['imu0'] = _imu_t.numpy().astype(np.float32)
+
+        # Test-time SO(3) perturbation (per-window fixed rotation magnitude EXACTLY so3_test_deg, axis ~ S^2).
+        # NOTE (Server-B semantics, kept verbatim): only the IMU channels are rotated; the targets are
+        # NOT rotated, so an equivariant network is scored in the wrong frame. The paper's ID/SO(3)
+        # protocol rotates the targets as well (see src/dataloader/data_transform.py
+        # TransformTestSO3Rotation in the GINIO tree). Use --so3_rot_path / dataprep_test_augmentation
+        # for the paper protocol inside this tree.
+        if getattr(self, "so3_test_deg", 0.0) > 0.0:
+            from scipy.spatial.transform import Rotation as _Rot
+            _ax = np.random.randn(3); _ax = _ax / (np.linalg.norm(_ax) + 1e-12)
+            _R = _Rot.from_rotvec(_ax * np.deg2rad(self.so3_test_deg)).as_matrix()
+            feats['imu0'] = np.asarray(feats['imu0'])
+            feats['imu0'][:3, :] = np.einsum("ij,jt->it", _R, feats['imu0'][:3, :])
+            feats['imu0'][3:6, :] = np.einsum("ij,jt->it", _R, feats['imu0'][3:6, :])
 
         feats['feat_o2'] = self.preprocess_o2(feats['imu0'])
         # We may return multiple windows, so place them all in here for convenience.

@@ -690,9 +690,9 @@ def get_cov_type_from_arch(arch: str) -> str:
     s = (arch or "").lower()
     if s == "ln_resnet_chol":
         return "eq_chol"
-    if s == "ln_resnet_cov":
+    if s in ("ln_resnet_cov", "ln189_speccov", "ln189_speccov_s0"):
         return "eq_spec"
-    return "diag"
+    return "diag"   # incl. ln_resnet_cov_diag, ln189_speccov*_diag, resnet, imunet, ln_resnet
 
 
 def _forward_with_cov(network, feat, cov_type):
@@ -991,7 +991,9 @@ def net_test(args):
             logging.info(f"Test-time perturbation: type={_pt} deg={_pd}")
         
         # net_attr_dict = get_inference(network, seq_loader, device, epoch=50, body_frame_3regress = body_frame_3regress, body_frame = body_frame, transforms = test_transforms)
-        cov_type = get_cov_type_from_arch(args.arch)
+        # explicit --cov_type wins (same rule as train.py); otherwise derive it from the arch name
+        _ct = getattr(args, "cov_type", "auto")
+        cov_type = _ct if _ct not in (None, "auto") else get_cov_type_from_arch(args.arch)
         net_attr_dict = get_inference(network, seq_loader, device, epoch=50,
                                     body_frame_3regress=body_frame_3regress,
                                     body_frame=body_frame, transforms=test_transforms,

@@ -16,6 +16,65 @@ from utils.logging import logging
 
 import re
 
+
+class TestPerturbHook:
+    """Inject a per-sample rotation into the raw IMU stream before the EKF sees it.
+
+    type='gravity': fixed horizontal-axis rotation per sequence (uniform magnitude
+        in [0, deg]) -- models a constant sensor-mount tilt that breaks any
+        gravity-equivariance assumption.
+    type='lfa': smooth random-walk rotation rvec(t) scaled so per-sequence peak
+        magnitude equals `deg`. Models time-varying calibration noise.
+    type='so3': fixed random SO(3) rotation of magnitude exactly `deg` per sequence.
+    type='none': pass-through (default; normal runs untouched).
+    """
+    def __init__(self, perturb_type, perturb_deg, seed, dataset_name):
+        self.type = perturb_type
+        self.deg = float(perturb_deg)
+        # Deterministic seed per (type, deg, dataset) so reruns reproduce.
+        h = (hash((perturb_type, round(self.deg, 4), str(dataset_name))) & 0xFFFFFFFF)
+        self.rng = np.random.default_rng((seed + h) & 0xFFFFFFFF)
+        self.R_fixed = None
+        self.rvec_cache = None
+        if self.type == "gravity" and self.deg > 0:
+            theta = self.rng.uniform(0.0, np.deg2rad(self.deg))
+            phi = self.rng.uniform(0.0, 2 * np.pi)
+            axis = np.array([np.cos(phi), np.sin(phi), 0.0]) * theta
+            self.R_fixed = Rotation.from_rotvec(axis).as_matrix()
+        elif self.type == "so3" and self.deg > 0:
+            z = self.rng.standard_normal(3)
+            z /= np.linalg.norm(z) + 1e-12
+            theta = np.deg2rad(self.deg)
+            self.R_fixed = Rotation.from_rotvec(z * theta).as_matrix()
+
+    def precompute_lfa(self, N):
+        if self.type != "lfa" or self.deg <= 0 or N <= 1:
+            return
+        max_rad = np.deg2rad(self.deg)
+        inc = self.rng.standard_normal((N - 1, 3))
+        rvec = np.zeros((N, 3))
+        for t in range(N - 2, -1, -1):
+            rvec[t] = rvec[t + 1] + inc[t]
+        max_norm = float(np.linalg.norm(rvec, axis=1).max())
+        if max_norm > 1e-8:
+            rvec = rvec * (max_rad / max_norm)
+        rvec[-1] = 0.0
+        self.rvec_cache = rvec
+
+    def apply(self, i, acc, gyr):
+        if self.type == "none" or self.deg <= 0:
+            return acc, gyr
+        if self.type in ("gravity", "so3"):
+            R = self.R_fixed
+        elif self.type == "lfa":
+            if self.rvec_cache is None:
+                return acc, gyr
+            R = Rotation.from_rotvec(self.rvec_cache[i]).as_matrix()
+        else:
+            return acc, gyr
+        return R @ acc, R @ gyr
+
+
 class ImuTrackerRunner:
     """
     This class is responsible for going through a dataset, feed imu tracker and log its result
@@ -78,29 +137,23 @@ class ImuTrackerRunner:
                 "mahalanobis_fail_scale": args.mahalanobis_fail_scale,
             }
         )
-        if "sim" not in args.root_dir:
-            match = re.search(r'/(\d{15,16})/', self.outfile)
-            replace_string = "./../so3_local_data_bodyframe/146734859523827/imu0_resampled.npy"
-            
-        else:
-            match = re.search(r'/(\d{1,3})/', self.outfile)
-            replace_string = "./../june_sim_imu_longerseq/1/imu0_resampled.npy"
-            
-        if match:
-            extracted_string = match.group(1)
-            # print("Extracted string:", extracted_string)
-        else:
-            extracted_string = None
-            print("No match found")
-
-        if extracted_string:
-            if "sim" not in args.root_dir:
-                # vio_path = re.sub(r'/\d{15,16}/', f'/{extracted_string}/', replace_string)
-                vio_path = args.root_dir + extracted_string + "/imu0_resampled.npy" 
-            else:
-                # vio_path = re.sub(r'/(?:[1-9]|[1-9][0-9]|[1-3][0-9][0-9]|400)/', f'/{extracted_string}/', replace_string)
-                # vio_path = re.sub(r'/\d{1,3}/', f'/{extracted_string}/', replace_string)
-                vio_path = args.root_dir + extracted_string + "/imu0_resampled.npy" 
+        # Try multiple regex patterns to extract the sequence name from the outfile path:
+        #   TLIO: 15-16 digit numeric IDs
+        #   sim:  1-3 digit IDs
+        #   RIDI: alphanumeric like dan_bag1, hang_handheld_test1
+        vio_path = None
+        for pattern in [r'/(\d{15,16})/', r'/(\d{1,3})/', r'/([a-zA-Z_]+\d*[a-zA-Z_]*\d*)/']:
+            match = re.search(pattern, self.outfile)
+            if match:
+                extracted_string = match.group(1)
+                candidate = os.path.join(args.root_dir.rstrip("/"), extracted_string, "imu0_resampled.npy")
+                if os.path.exists(candidate):
+                    vio_path = candidate
+                    break
+        if vio_path is None:
+            # Last-resort fallback: `dataset` is the sequence name passed to this runner
+            vio_path = os.path.join(args.root_dir.rstrip("/"), dataset, "imu0_resampled.npy")
+            print(f"vio_path fallback to: {vio_path}")
         # ImuTracker object
         self.tracker = ImuTracker(
             model_path=args.model_path,
@@ -114,6 +167,14 @@ class ImuTrackerRunner:
             secondary_arch=getattr(args, "secondary_arch", None),
             hybrid_mode=getattr(args, "hybrid_mode", None),
             yaw_aligned=getattr(args, "yaw_aligned", True),
+        )
+
+        # Test-time perturbation hook (applies to raw IMU before the tracker sees it; 'none' by default)
+        self.perturb_hook = TestPerturbHook(
+            perturb_type=getattr(args, "test_perturb_type", "none"),
+            perturb_deg=getattr(args, "test_perturb_deg", 0.0),
+            seed=getattr(args, "test_perturb_seed", 0),
+            dataset_name=dataset,
         )
 
         # output
@@ -197,9 +258,13 @@ class ImuTrackerRunner:
 
         # Loop through the entire dataset and feed the data to the imu tracker
         n_data = self.input.dataset_size
+        # Pre-compute the LFA rotation schedule now that the stream length is known
+        self.perturb_hook.precompute_lfa(n_data)
         for i in tqdm(range(n_data)):
             # obtain next raw IMU measurement from data loader
             ts, acc_raw, gyr_raw = self.input.get_datai(i)
+            # Inject test-time perturbation (gravity tilt / LFA-style noise / fixed SO(3)); no-op by default
+            acc_raw, gyr_raw = self.perturb_hook.apply(i, acc_raw, gyr_raw)
             t_us = int(ts * 1e6)
             # cheat a bit with filter state in case for debugging
             if args.debug_using_vio_ba:

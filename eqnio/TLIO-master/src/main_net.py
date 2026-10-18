@@ -72,6 +72,13 @@ if __name__ == "__main__":
     add_bool_arg(parser, "so3_augment", default=False)
     parser.add_argument("--so3_augment_max_deg", type=float, default=180.0,
                         help="max axis-angle magnitude in degrees for SO(3) data augmentation (180 ~= uniform on SO(3))")
+    # Test-time LFA-style perturbation (time-varying relative rotation, anchored at last frame)
+    parser.add_argument("--lfa_perturb_max_deg", type=float, default=0.0,
+                        help="if > 0, apply per-sample LFA relative-rotation noise with this peak magnitude (deg) at TEST time")
+    parser.add_argument("--lfa_perturb_mode", type=str, default="smooth", choices=["smooth", "ramp"],
+                        help="LFA noise temporal pattern: 'smooth' random walk or 'ramp' linear decay")
+    parser.add_argument("--so3_test_deg", type=float, default=0.0,
+                        help="If > 0, apply test-time fixed-magnitude SO(3) rotation (deg) per window (IMU only; targets not rotated)")
 
     # ----- window size and inference freq -----
     parser.add_argument("--past_time", type=float, default=0.0)  # s

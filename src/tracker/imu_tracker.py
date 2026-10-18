@@ -145,6 +145,27 @@ class ImuTracker:
         self.next_interp_t_us = None
         self.next_aug_t_us = None
         self.has_done_first_update = False
+
+        # --- rebuttal: filter-connected attitude-error sweep hook ---
+        # Inject a CONSTANT attitude estimate error (tilt about a horizontal axis) into the
+        # orientation used to express the network input frame. Models "the attitude estimate the
+        # framework depends on is wrong by theta". Controlled by env vars so normal runs are untouched.
+        # ATT_ERR_DEG (float, deg) and ATT_ERR_AXIS ('x'/'y'/'z'; use x or y for a gravity-TILT error,
+        # since the yaw component is removed downstream and would be a no-op).
+        _att_deg = float(os.environ.get("ATT_ERR_DEG", "0") or "0")
+        _att_axis = os.environ.get("ATT_ERR_AXIS", "x")
+        if abs(_att_deg) > 1e-9:
+            _ax = {"x": [1.0, 0.0, 0.0], "y": [0.0, 1.0, 0.0], "z": [0.0, 0.0, 1.0]}.get(
+                _att_axis, [1.0, 0.0, 0.0]
+            )
+            self._att_err_R = Rotation.from_rotvec(
+                np.deg2rad(_att_deg) * np.array(_ax)
+            ).as_matrix()
+            logging.info(
+                f"[ATT-SWEEP] injecting {_att_deg} deg attitude error about {_att_axis} into net-input frame"
+            )
+        else:
+            self._att_err_R = None
         
         self.body_frame = body_frame
         self.vio_path = vio_path
@@ -247,7 +268,11 @@ class ImuTracker:
         else:
             # get data from filter
             R_oldest_state_wfb, _ = self.filter.get_past_state(t_oldest_state_us)  #   3 x 3  #using ekf
-            
+
+            # rebuttal attitude-error sweep: corrupt the attitude estimate feeding the net-input frame
+            if getattr(self, "_att_err_R", None) is not None:
+                R_oldest_state_wfb = self._att_err_R @ R_oldest_state_wfb
+
             # # R_oldest_state_wfb, _ = self.filter.get_past_state(t_oldest_state_us+50000)  # 3 x 3    #using riekf
             # vio_data = np.load(s/elf.vio_path)
             # time = vio_data[:, 0]
@@ -479,15 +504,17 @@ class ImuTracker:
         if do_interpolation_of_imu:
             self._add_interpolated_imu_to_buffer(acc_biascpst, gyr_biascpst, t_us)
         
-        if not self.use_riekf : 
+        if not self.use_riekf :
             if "so3" in self.vio_path:
-                # rotation_info = np.load("./../so3_local_data_bodyframe/rpy_values.npy")
-                rotation_info = np.load("./../../local_data_bodyframe/so3_60/rpy_values.npy")
+                # world SO(3) test: rpy_values.npy lives at the dataset root (dirname of the seq dir),
+                # indexed by the SEQUENCE index i (== iter_num from the runner). Robust to cwd.
+                _rpy_path = os.path.join(os.path.dirname(os.path.dirname(self.vio_path)), "rpy_values.npy")
+                rotation_info = np.load(_rpy_path)
                 rotation_rpy = rotation_info[i,:]
                 m_b2bprime = Rotation.from_euler('xyz', rotation_rpy, degrees=False).as_matrix()
             else:
                 m_b2bprime = np.eye(3)
-                
+
             self.filter.propagate(
                 # acc_raw, gyr_raw, t_us, t_augmentation_us=t_augmentation_us
                 acc_raw, gyr_raw, t_us, t_augmentation_us=t_augmentation_us, m_b2bprime=m_b2bprime
@@ -496,13 +523,13 @@ class ImuTracker:
             
         else:
             if "so3" in self.vio_path:
-                # rotation_info = np.load("./../so3_local_data_bodyframe/rpy_values.npy")
-                rotation_info = np.load("./../../local_data_bodyframe/so3_60/rpy_values.npy")
+                _rpy_path = os.path.join(os.path.dirname(os.path.dirname(self.vio_path)), "rpy_values.npy")
+                rotation_info = np.load(_rpy_path)
                 rotation_rpy = rotation_info[i,:]
                 m_b2bprime = Rotation.from_euler('xyz', rotation_rpy, degrees=False).as_matrix()
             else:
                 m_b2bprime = np.eye(3)
-            
+
             # assert t_augmentation_us is not None
             self.filter.propagate_riekf(
                 # acc_raw, gyr_raw, t_us, m_b2bprime

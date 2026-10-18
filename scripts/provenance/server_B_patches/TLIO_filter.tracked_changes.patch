@@ -1,0 +1,346 @@
+diff --git a/src/main_filter.py b/src/main_filter.py
+index 4d0f2d5..3c66652 100644
+--- a/src/main_filter.py
++++ b/src/main_filter.py
+@@ -167,7 +167,8 @@ if __name__ == "__main__":
+             logging.info(f"Processing {i} / {n_data} dataset {name}")
+             try:
+                 trackerRunner = ImuTrackerRunner(args, name)
+-                trackerRunner.run_tracker(args)
++                # trackerRunner.run_tracker(args)
++                trackerRunner.run_tracker(args, i)
+             except FileExistsError as e:
+                 print(e)
+                 continue
+diff --git a/src/network/covariance_parametrization.py b/src/network/covariance_parametrization.py
+index d904600..b195e1e 100644
+--- a/src/network/covariance_parametrization.py
++++ b/src/network/covariance_parametrization.py
+@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
+ import torch
+ from liegroups.torch import SO3
+ 
++MIN_LOG_STD = -5.0 # This prevents variance from becoming too small (exp(-5*2) = 4.5e-5)
+ 
+ class BaseParams(ABC):
+     @classmethod
+@@ -67,6 +68,43 @@ class DiagonalParam(BaseParams):
+ 
+         return covf.reshape((N, 3, 3))
+ 
++class EquivCovariance:
++    """
++    Constructs a full, anisotropic covariance matrix from an equivariant basis
++    and invariant log standard deviations, mirroring the structure in
++    loss_distribution_covariance.
++    """
++    @classmethod
++    def vec2Cov(cls, pred_V: torch.Tensor, pred_inv: torch.Tensor) -> torch.Tensor:
++        """
++        Args:
++            pred_V (torch.Tensor): [N, 3, 3] tensor representing the predicted
++                                   orthonormal basis (equivariant).
++            pred_inv (torch.Tensor): [N, 3] tensor representing the predicted
++                                     log standard deviations (invariant).
++        Returns:
++            pred_cov (torch.Tensor): [N, 3, 3] full covariance matrix.
++        """
++        # Ensure correct input shapes
++        assert pred_V.shape[1:] == (3, 3), "pred_V must have shape [N, 3, 3]"
++        assert pred_inv.shape[1] == 3, "pred_inv must have shape [N, 3]"
++
++        # 1. Clamp the log standard deviations for numerical stability
++        # clamped_pred_inv = torch.clamp(pred_inv, min=MIN_LOG_STD)
++        clamped_pred_inv = pred_inv
++
++        # 2. Calculate the diagonal variance matrix in the local basis
++        # Shape: [N, 3] -> [N, 3]
++        cov_diag_values = torch.exp(clamped_pred_inv * 2)
++        # Shape: [N, 3] -> [N, 3, 3]
++        cov_diag_matrix = torch.diag_embed(cov_diag_values)
++
++        # 3. Transform the diagonal covariance into the world frame using the equivariant basis V
++        # Sigma = V * diag(sigma^2) * V^T
++        # Shape: [N, 3, 3] @ [N, 3, 3] @ [N, 3, 3] -> [N, 3, 3]
++        pred_cov = torch.matmul(pred_V, torch.matmul(cov_diag_matrix, pred_V.transpose(1, 2)))
++
++        return pred_cov
+ 
+ class PearsonParam(BaseParams):
+     """
+@@ -185,3 +223,31 @@ class SinhParam(BaseParams):
+         covf[:, 7] = covf[:, 5]  # yz
+ 
+         return covf.reshape((N, 3, 3))
++
++class CovarianceParam(BaseParams):
++    """
++    This class represents the covariance parameterization where the input for pred_logstd
++    is in the complete n*3*3 covariance matrix format.
++    """
++
++    covParamNumber = 9  # Assuming pred_logstd has 9 parameters for the complete covariance matrix
++
++    @classmethod
++    def vec2Cov(cls, p):
++        """
++        Convert the parameter vector p to the covariance matrix format.
++
++        Args:
++            p (torch.Tensor): Parameter vector of shape (n, 9) representing the complete covariance matrix.
++
++        Returns:
++            cov (torch.Tensor): Covariance matrix of shape (n, 3, 3).
++        """
++        assert p.shape[1] *  p.shape[2] == cls.covParamNumber, "Incorrect number of parameters for covariance matrix"
++        # N = p.shape[0]
++
++        # # Reshape parameter vector to covariance matrix format
++        # cov = p.reshape((N, 3, 3))
++        cov = p
++
++        return cov
+\ No newline at end of file
+diff --git a/src/tracker/imu_tracker.py b/src/tracker/imu_tracker.py
+index d945b04..d5b9115 100644
+--- a/src/tracker/imu_tracker.py
++++ b/src/tracker/imu_tracker.py
+@@ -14,6 +14,7 @@ from utils.dotdict import dotdict
+ from utils.from_scipy import compute_euler_from_matrix
+ from utils.logging import logging
+ from utils.math_utils import mat_exp
++from scipy.spatial.transform import Rotation
+ 
+ 
+ class ImuTracker:
+@@ -31,6 +32,7 @@ class ImuTracker:
+         filter_tuning_cfg,
+         imu_calib: Optional[ImuCalib] = None,
+         force_cpu=False,
++        vio_path = None,
+     ):
+ 
+         config_from_network = dotdict({})
+@@ -137,6 +139,8 @@ class ImuTracker:
+         self.next_aug_t_us = None
+         self.has_done_first_update = False
+ 
++        self.vio_path = vio_path
++        
+     @jit(forceobj=True, parallel=False, cache=False)
+     def _get_imu_samples_for_network(self, t_begin_us, t_oldest_state_us, t_end_us):
+         # extract corresponding network input data
+@@ -244,18 +248,21 @@ class ImuTracker:
+         self.filter.initialize(t_us, acc_biascpst, init_ba, init_bg)
+         self._after_filter_init_member_setup(t_us, gyr_biascpst, acc_biascpst)
+ 
+-    def on_imu_measurement(self, t_us, gyr_raw, acc_raw):
++    # def on_imu_measurement(self, t_us, gyr_raw, acc_raw):
++    def on_imu_measurement(self, t_us, gyr_raw, acc_raw, i):
+         assert isinstance(t_us, int)
+         if t_us - self.last_t_us > 3e3:
+             logging.warning(f"Big IMU gap : {t_us - self.last_t_us}us")
+ 
+         if self.filter.initialized:
+-            return self._on_imu_measurement_after_init(t_us, gyr_raw, acc_raw)
++            # return self._on_imu_measurement_after_init(t_us, gyr_raw, acc_raw)
++            return self._on_imu_measurement_after_init(t_us, gyr_raw, acc_raw, i)
+         else:
+             self._init_without_state_at_time(t_us, gyr_raw, acc_raw)
+             return False
+ 
+-    def _on_imu_measurement_after_init(self, t_us, gyr_raw, acc_raw):
++    # def _on_imu_measurement_after_init(self, t_us, gyr_raw, acc_raw):
++    def _on_imu_measurement_after_init(self, t_us, gyr_raw, acc_raw, i):
+         """
+         For new IMU measurement, after the filter has been initialized
+         """
+@@ -299,8 +306,19 @@ class ImuTracker:
+         if do_interpolation_of_imu:
+             self._add_interpolated_imu_to_buffer(acc_biascpst, gyr_biascpst, t_us)
+ 
++        if "so3" in self.vio_path:
++            # rotation_info = np.load("./../../imu-equivariant-learning/so3_local_data_bodyframe2/rpy_values.npy")
++            # rotation_info = np.load("./../../imu-equivariant-learning/local_data/so3_60/rpy_values.npy")
++            rotation_info = np.load("./../../so3_60/rpy_values.npy")
++            # rotation_info = np.load("./../../imu-equivariant-learning/local_data/so3_60_again/rpy_values.npy")
++            rotation_rpy = rotation_info[i,:]
++            m_b2bprime = Rotation.from_euler('xyz', rotation_rpy, degrees=False).as_matrix()
++        else:
++            m_b2bprime = np.eye(3)
++            
+         self.filter.propagate(
+-            acc_raw, gyr_raw, t_us, t_augmentation_us=t_augmentation_us
++            # acc_raw, gyr_raw, t_us, t_augmentation_us=t_augmentation_us
++            acc_raw, gyr_raw, t_us, t_augmentation_us=t_augmentation_us, m_b2bprime = m_b2bprime
+         )
+         # filter update
+         did_update = False
+diff --git a/src/tracker/imu_tracker_runner.py b/src/tracker/imu_tracker_runner.py
+index 2ba5efc..6b8c9ea 100644
+--- a/src/tracker/imu_tracker_runner.py
++++ b/src/tracker/imu_tracker_runner.py
+@@ -13,6 +13,7 @@ from utils.o3d_visualizer import O3dVisualizer
+ from utils.dotdict import dotdict
+ from utils.logging import logging
+ 
++import re
+ 
+ class ImuTrackerRunner:
+     """
+@@ -75,6 +76,35 @@ class ImuTrackerRunner:
+                 "mahalanobis_fail_scale": args.mahalanobis_fail_scale,
+             }
+         )
++        if "sim" not in args.root_dir:
++            match = re.search(r'/(\d{15,16})/', self.outfile)
++            replace_string = "./../so3_local_data_bodyframe/146734859523827/imu0_resampled.npy"
++            
++        else:
++            match = re.search(r'/(\d{1,3})/', self.outfile)
++            replace_string = "./../june_sim_imu_longerseq/1/imu0_resampled.npy"
++            
++        if match:
++            extracted_string = match.group(1)
++            # print("Extracted string:", extracted_string)
++        else:
++            extracted_string = None
++            print("No match found")
++
++        if extracted_string:
++            if "sim" not in args.root_dir:
++                # vio_path = re.sub(r'/\d{15,16}/', f'/{extracted_string}/', replace_string)
++                vio_path = args.root_dir + extracted_string + "/imu0_resampled.npy" 
++            else:
++                # vio_path = re.sub(r'/(?:[1-9]|[1-9][0-9]|[1-3][0-9][0-9]|400)/', f'/{extracted_string}/', replace_string)
++                # vio_path = re.sub(r'/\d{1,3}/', f'/{extracted_string}/', replace_string)
++                vio_path = args.root_dir + extracted_string + "/imu0_resampled.npy" 
++                
++            # print("Generated vio_path:", vio_path)
++        else:
++            print("Cannot generate vio_path as no extracted string was found")
++            
++        print("vio_path : ", vio_path)
+ 
+         # ImuTracker object
+         self.tracker = ImuTracker(
+@@ -84,6 +114,7 @@ class ImuTrackerRunner:
+             filter_tuning_cfg=filter_tuning,
+             imu_calib=imu_calib,
+             #force_cpu=True,
++            vio_path = vio_path,
+         )
+ 
+         # output
+@@ -143,7 +174,8 @@ class ImuTrackerRunner:
+             np.savetxt(self.f_state, self.log_output_buffer, delimiter=",")
+             self.log_output_buffer = None
+ 
+-    def run_tracker(self, args):
++    # def run_tracker(self, args):
++    def run_tracker(self, args, iter_num):
+         # initialize debug callbacks
+         def initialize_with_vio_at_first_update(this):
+             logging.info(
+@@ -183,7 +215,8 @@ class ImuTrackerRunner:
+                 self.tracker.filter.state.s_bg = np.atleast_2d(vio_bg).T
+ 
+             if self.tracker.filter.initialized:
+-                did_update = self.tracker.on_imu_measurement(t_us, gyr_raw, acc_raw)
++                # did_update = self.tracker.on_imu_measurement(t_us, gyr_raw, acc_raw)
++                did_update = self.tracker.on_imu_measurement(t_us, gyr_raw, acc_raw, iter_num)
+                 self.add_data_to_be_logged(
+                     ts,
+                     self.tracker.last_acc_before_next_interp_time,  # beware when imu drops, it might not be what you want here
+diff --git a/src/tracker/meas_source_torchscript.py b/src/tracker/meas_source_torchscript.py
+index a25d6ca..9308bb7 100644
+--- a/src/tracker/meas_source_torchscript.py
++++ b/src/tracker/meas_source_torchscript.py
+@@ -1,6 +1,6 @@
+ import numpy as np
+ import torch
+-from network.covariance_parametrization import DiagonalParam
++from network.covariance_parametrization import DiagonalParam, EquivCovariance
+ from utils.logging import logging
+ 
+ 
+@@ -38,7 +38,10 @@ class MeasSourceTorchScript:
+             outputs = self.net(*netargs)
+ 
+             if type(outputs) == tuple:  # Legacy
+-                meas, meas_cov = outputs
++                # meas, meas_cov = outputs
++                meas, meas_V, meas_cov = outputs
++                meas_cov = meas_cov.reshape(1, -1)
++                
+             elif type(outputs) == dict:  # New output format
+                 meas, meas_cov = outputs["pred"], outputs["pred_log_std"]
+                 # If this is the case, the network predicts over the whole window at high frequency.
+@@ -51,8 +54,11 @@ class MeasSourceTorchScript:
+             assert meas_cov.dim() == 2
+ 
+             meas = meas.cpu().detach().numpy()
+-            meas_cov[meas_cov < -4] = -4  # exp(-3) =~ 0.05
+-            meas_cov = DiagonalParam.vec2Cov(meas_cov).cpu().detach().numpy()[0, :, :]
++            
++            # meas_cov[meas_cov < -4] = -4  # exp(-3) =~ 0.05
++            # meas_cov = DiagonalParam.vec2Cov(meas_cov).cpu().detach().numpy()[0, :, :]
++            meas_cov_tensor = EquivCovariance.vec2Cov(meas_V, meas_cov)
++            meas_cov = meas_cov_tensor.squeeze(0).cpu().detach().numpy()
+             meas = meas.reshape((3, 1))
+ 
+             # Our equivalent of zero position update (TODO need stronger prior to keep it still)
+diff --git a/src/tracker/scekf.py b/src/tracker/scekf.py
+index a69b981..9b85701 100644
+--- a/src/tracker/scekf.py
++++ b/src/tracker/scekf.py
+@@ -125,7 +125,8 @@ class State(object):
+ 
+ 
+ @jit(nopython=True, parallel=False, cache=True)
+-def propagate_rvt_and_jac(R_k, v_k, p_k, b_gk, b_ak, gyr, acc, g, dt):
++# def propagate_rvt_and_jac(R_k, v_k, p_k, b_gk, b_ak, gyr, acc, g, dt):
++def propagate_rvt_and_jac(R_k, v_k, p_k, b_gk, b_ak, gyr, acc, g, dt, m_b2bprime):
+     def hat(v):
+         v = v.flatten()
+         R = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+@@ -136,7 +137,8 @@ def propagate_rvt_and_jac(R_k, v_k, p_k, b_gk, b_ak, gyr, acc, g, dt):
+     Rd = R_k @ dRd
+     dv_w = R_k @ (acc - b_ak) * dt
+     dp_w = 0.5 * dv_w * dt
+-    gdt = g * dt
++    # gdt = g * dt
++    gdt = (m_b2bprime @ g) * dt
+     gdt22 = 0.5 * gdt * dt
+     vd = v_k + dv_w + gdt
+     pd = p_k + v_k * dt + dp_w + gdt22
+@@ -377,7 +379,8 @@ class ImuMSCKF:
+                 return False
+         return True
+ 
+-    def propagate(self, acc, gyr, t_us, t_augmentation_us=None):
++    # def propagate(self, acc, gyr, t_us, t_augmentation_us=None):
++    def propagate(self, acc, gyr, t_us, t_augmentation_us=None, m_b2bprime=np.eye(3)):
+ 
+         R_k, v_k, p_k, b_ak, b_gk = (
+             self.state.s_R,
+@@ -391,7 +394,8 @@ class ImuMSCKF:
+         # evolving state propagation
+         dt_us = t_us - self.state.s_timestamp_us
+         R_kp1, v_kp1, p_kp1, Akp1 = propagate_rvt_and_jac(
+-            R_k, v_k, p_k, b_gk, b_ak, gyr, acc, self.g, dt_us * 1e-6
++            # R_k, v_k, p_k, b_gk, b_ak, gyr, acc, self.g, dt_us * 1e-6
++            R_k, v_k, p_k, b_gk, b_ak, gyr, acc, self.g, dt_us * 1e-6, m_b2bprime
+         )
+         b_gkp1 = b_gk
+         b_akp1 = b_ak
+@@ -406,7 +410,8 @@ class ImuMSCKF:
+             # past state propagation (partial integration)
+             dtd_us = t_augmentation_us - self.state.s_timestamp_us
+             Rd, vd, pd, Ad = propagate_rvt_and_jac(
+-                R_k, v_k, p_k, b_gk, b_ak, gyr, acc, self.g, dtd_us * 1e-6
++                # R_k, v_k, p_k, b_gk, b_ak, gyr, acc, self.g, dtd_us * 1e-6
++                R_k, v_k, p_k, b_gk, b_ak, gyr, acc, self.g, dtd_us * 1e-6, m_b2bprime
+             )
+ 
+             # propagate covariance

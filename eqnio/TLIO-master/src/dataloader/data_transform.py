@@ -131,6 +131,64 @@ class TransformPerturbGravity:
         return sample_new
 
 
+class TransformLFARelativeRotationNoise:
+    """
+    Test-time time-varying relative-rotation perturbation. Ported from
+    imu-equivariant-learning/src/dataloader/data_transform.py.
+
+    Operates on a SINGLE-sample IMU tensor of shape (6, T): rows 0..2 = gyro,
+    rows 3..5 = accel. Injects a per-timestep rotation R_t such that
+        x_t -> R_t @ x_t
+    with R_{T-1} = I, so the last timestep stays anchored. Per-window peak
+    magnitude is exactly max_deg.
+
+    Targets are NOT rotated (this models input-side calibration noise, not a
+    real frame change).
+    """
+    def __init__(self, max_deg=3.0, mode="smooth"):
+        self.max_rad = max_deg * math.pi / 180.0
+        self.mode = mode
+
+    def _sample_rvec_smooth(self, T, device, dtype):
+        if T == 1:
+            return torch.zeros(1, 3, device=device, dtype=dtype)
+        inc = torch.randn(T - 1, 3, device=device, dtype=dtype)
+        rvec = torch.zeros(T, 3, device=device, dtype=dtype)
+        for t in range(T - 2, -1, -1):
+            rvec[t, :] = rvec[t + 1, :] + inc[t, :]
+        max_norm = rvec.norm(dim=-1).max().clamp_min(1e-8)
+        rvec = rvec * (self.max_rad / max_norm)
+        rvec[-1, :] = 0.0
+        return rvec
+
+    def _sample_rvec_ramp(self, T, device, dtype):
+        axis = torch.randn(3, device=device, dtype=dtype)
+        axis = axis / axis.norm().clamp_min(1e-8)
+        alpha = torch.linspace(1.0, 0.0, T, device=device, dtype=dtype).unsqueeze(-1)
+        rvec = axis.unsqueeze(0) * self.max_rad * alpha
+        rvec[-1, :] = 0.0
+        return rvec
+
+    def apply_to_imu(self, imu_tensor):
+        """imu_tensor: torch.Tensor of shape (6, T). Returns rotated tensor in-place style."""
+        assert imu_tensor.ndim == 2 and imu_tensor.shape[0] == 6, \
+            f"Expected (6, T) IMU tensor, got {tuple(imu_tensor.shape)}"
+        T = imu_tensor.shape[1]
+        device, dtype = imu_tensor.device, imu_tensor.dtype
+        if self.mode == "ramp":
+            rvec = self._sample_rvec_ramp(T, device, dtype)
+        else:
+            rvec = self._sample_rvec_smooth(T, device, dtype)
+        R = so3_exp_map(rvec)  # (T, 3, 3)
+        # Rotate gyro and accel: x'_t = R_t @ x_t
+        gyro = torch.einsum("tij,jt->it", R, imu_tensor[:3, :])
+        accel = torch.einsum("tij,jt->it", R, imu_tensor[3:6, :])
+        out = imu_tensor.clone()
+        out[:3, :] = gyro
+        out[3:6, :] = accel
+        return out
+
+
 class TransformInYawPlane:
     """this transform object:
         - rotate imu data in horizontal plane with a random planar rotation

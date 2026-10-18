@@ -63,12 +63,19 @@ class MeasSourceTorchScript:
                     meas_cov = meas_cov[:, -1]
 
             assert meas.dim() == 2  # [B,3]
-            assert meas_cov.dim() == 2
 
             meas = meas.cpu().detach().numpy()
-            
-            meas_cov[meas_cov < -4] = -4  # exp(-3) =~ 0.05
-            meas_cov = DiagonalParam.vec2Cov(meas_cov).cpu().detach().numpy()[0, :, :]
+
+            if meas_cov.dim() == 3:
+                # FULL covariance [B,3,3] passthrough (spectral-cov experiment, Fig. 5): a torchscript
+                # exported with scripts/export/export_fullcov_ts.py emits the full 3x3 measurement
+                # covariance directly, so the SCEKF update uses the off-diagonal (equivariant)
+                # structure instead of a diagonalised version. Default (dim()==2) path unchanged.
+                meas_cov = meas_cov.cpu().detach().numpy()[0, :, :]
+            else:
+                assert meas_cov.dim() == 2
+                meas_cov[meas_cov < -4] = -4  # exp(-3) =~ 0.05
+                meas_cov = DiagonalParam.vec2Cov(meas_cov).cpu().detach().numpy()[0, :, :]
             # meas_cov_tensor = EquivCovariance.vec2Cov(meas_V, meas_cov)
             # meas_cov = meas_cov_tensor.squeeze(0).cpu().detach().numpy()
             # v = meas_cov  # shape: [B, 3]

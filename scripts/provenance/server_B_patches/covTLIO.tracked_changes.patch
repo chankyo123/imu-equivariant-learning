@@ -1,0 +1,869 @@
+diff --git a/src/dataloader/data_transform.py b/src/dataloader/data_transform.py
+index 144976d..f5c4d8b 100644
+--- a/src/dataloader/data_transform.py
++++ b/src/dataloader/data_transform.py
+@@ -38,12 +38,12 @@ class TransformAddNoiseBias:
+                 feat_aug[:, :3, :] += (
+                     (torch.rand(N, 3, 1, device=feat.device, dtype=feat.dtype) - 0.5)
+                     * self.gyro_bias_range / 0.5
+-                    # * self.gyro_bias_range / 0.5 * 0.5
++                    # * self.gyro_bias_range / 0.5 * 0.25
+                 )
+                 feat_aug[:, 3:6, :] += (
+                     (torch.rand(N, 3, 1, device=feat.device, dtype=feat.dtype) - 0.5)
+                     * self.accel_bias_range / 0.5
+-                    # * self.accel_bias_range / 0.5 * 0.5
++                    # * self.accel_bias_range / 0.5 * 0.25
+                 )
+ 
+                 # add gaussian noise
+diff --git a/src/dataloader/memmapped_sequences_dataset.py b/src/dataloader/memmapped_sequences_dataset.py
+index ac3acb8..0f3b19d 100644
+--- a/src/dataloader/memmapped_sequences_dataset.py
++++ b/src/dataloader/memmapped_sequences_dataset.py
+@@ -292,7 +292,7 @@ class MemMappedSequencesDataset(Dataset, SequencesDataset):
+         start_idx = (self.genparams.window_size - 1) // 2
+         end = len(fp) - self.genparams.window_size//2
+         
+-        body_frame = False
++        body_frame = True
+         if body_frame:
+             traj = fp[start_idx:end:self.genparams.decimator,-10:] # [start:stop:step], [ qxyzw_World_Device, pos_World_Device, vel_Body]
+             # traj = fp[start_idx+self.genparams.window_size // 2:end+self.genparams.window_size // 2:self.genparams.decimator,-10:-3] # (velocity estimation, not displacement)
+diff --git a/src/dataloader/tlio_data.py b/src/dataloader/tlio_data.py
+index b095f68..eb60b21 100644
+--- a/src/dataloader/tlio_data.py
++++ b/src/dataloader/tlio_data.py
+@@ -202,7 +202,7 @@ class TlioData:
+         #             self.augmentation_options["perturb_gravity_theta_range"])
+         #     )
+ 
+-        transforms.append(TransformInYawPlane(self.data_window_config["input_sensors"]))
++        # transforms.append(TransformInYawPlane(self.data_window_config["input_sensors"]))
+         return transforms
+ 
+     def get_datalist(self, split="val"):
+diff --git a/src/network/covariance_parametrization.py b/src/network/covariance_parametrization.py
+index 30ea8e6..ae4c11d 100644
+--- a/src/network/covariance_parametrization.py
++++ b/src/network/covariance_parametrization.py
+@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
+ import torch
+ from liegroups.torch import SO3
+ 
++MIN_LOG_STD = -5.0 # This prevents variance from becoming too small (exp(-5*2) = 4.5e-5)
+ 
+ class BaseParams(ABC):
+     @classmethod
+@@ -67,6 +68,45 @@ class DiagonalParam(BaseParams):
+ 
+         return covf.reshape((N, 3, 3))
+ 
++class EquivCovariance:
++    """
++    Constructs a full, anisotropic covariance matrix from an equivariant basis
++    and invariant log standard deviations, mirroring the structure in
++    loss_distribution_covariance.
++    """
++    @classmethod
++    def vec2Cov(cls, pred_V: torch.Tensor, pred_inv: torch.Tensor) -> torch.Tensor:
++        """
++        Args:
++            pred_V (torch.Tensor): [N, 3, 3] tensor representing the predicted
++                                   orthonormal basis (equivariant).
++            pred_inv (torch.Tensor): [N, 3] tensor representing the predicted
++                                     log standard deviations (invariant).
++        Returns:
++            pred_cov (torch.Tensor): [N, 3, 3] full covariance matrix.
++        """
++        # Ensure correct input shapes
++        assert pred_V.shape[1:] == (3, 3), "pred_V must have shape [N, 3, 3]"
++        assert pred_inv.shape[1] == 3, "pred_inv must have shape [N, 3]"
++
++        # 1. Clamp the log standard deviations for numerical stability
++        # clamped_pred_inv = torch.clamp(pred_inv, min=MIN_LOG_STD)
++        clamped_pred_inv = pred_inv
++
++        # 2. Calculate the diagonal variance matrix in the local basis
++        # Shape: [N, 3] -> [N, 3]
++        cov_diag_values = torch.exp(clamped_pred_inv * 2)
++        # Shape: [N, 3] -> [N, 3, 3]
++        cov_diag_matrix = torch.diag_embed(cov_diag_values)
++
++        # 3. Transform the diagonal covariance into the world frame using the equivariant basis V
++        # Sigma = V * diag(sigma^2) * V^T
++        # Shape: [N, 3, 3] @ [N, 3, 3] @ [N, 3, 3] -> [N, 3, 3]
++        pred_cov = torch.matmul(pred_V, torch.matmul(cov_diag_matrix, pred_V.transpose(1, 2)))
++        pred_cov = 0.5 * (pred_cov + pred_cov.transpose(1, 2))
++        I = torch.eye(3, device=pred_cov.device, dtype=pred_cov.dtype).unsqueeze(0)
++        pred_cov = pred_cov + 1e-7 * I
++        return pred_cov
+ 
+ class PearsonParam(BaseParams):
+     """
+diff --git a/src/network/ln_conv_2regress_nochannelmix_slope_1.py b/src/network/ln_conv_2regress_nochannelmix_slope_1.py
+index cccafaf..56dfe09 100644
+--- a/src/network/ln_conv_2regress_nochannelmix_slope_1.py
++++ b/src/network/ln_conv_2regress_nochannelmix_slope_1.py
+@@ -500,8 +500,8 @@ class SO3EquivariantReluBracketLayers(nn.Module):
+         # x = rearrange(x,'b (f w) d 1 -> b f d w', w = 7)
+         # print(x.shape)  #[1024, 170, 3, 7]
+ 
+-        mean = self.output_block1(x)  
+-        covariance = self.output_block2(x) 
++        mean = self.output_block1(x)  #B,3
++        covariance = self.output_block2(x)  #B,3
+         
+         # # >>> SO(3) Equivariance Check : (3,1) vector and (3,3) covariance
+          
+diff --git a/src/network/ln_conv_2regress_nochannelmix_slope_1_onechannelmix.py b/src/network/ln_conv_2regress_nochannelmix_slope_1_onechannelmix.py
+index a6b2e86..b0934c4 100644
+--- a/src/network/ln_conv_2regress_nochannelmix_slope_1_onechannelmix.py
++++ b/src/network/ln_conv_2regress_nochannelmix_slope_1_onechannelmix.py
+@@ -187,12 +187,12 @@ class FcBlock(nn.Module):
+         self.bn1 = VNBatchNorm(self.prep_channel, dim=3)
+         # fc layers
+         ## TODO: check if linear contain bias
+-        self.fc1 = nn.Linear(self.prep_channel * self.in_dim, self.fc_dim, bias = False)
+-        self.fc2 = nn.Linear(self.fc_dim, self.fc_dim, bias = False)
+-        self.fc3 = nn.Linear(self.fc_dim, self.out_channel, bias = False)
+-        # self.fc1 = nn.Linear(self.prep_channel * self.in_dim, self.fc_dim)
+-        # self.fc2 = nn.Linear(self.fc_dim, self.fc_dim)
+-        # self.fc3 = nn.Linear(self.fc_dim, self.out_channel)
++        # self.fc1 = nn.Linear(self.prep_channel * self.in_dim, self.fc_dim, bias = False)
++        # self.fc2 = nn.Linear(self.fc_dim, self.fc_dim, bias = False)
++        # self.fc3 = nn.Linear(self.fc_dim, self.out_channel, bias = False)
++        self.fc1 = nn.Linear(self.prep_channel * self.in_dim, self.fc_dim)
++        self.fc2 = nn.Linear(self.fc_dim, self.fc_dim)
++        self.fc3 = nn.Linear(self.fc_dim, self.out_channel)
+         self.relu = VNLeakyReLU(self.fc_dim,negative_slope=0.1)
+         self.dropout = nn.Dropout(0.5)
+ 
+diff --git a/src/network/losses.py b/src/network/losses.py
+index 623c1f1..a24008f 100644
+--- a/src/network/losses.py
++++ b/src/network/losses.py
+@@ -2,6 +2,7 @@ import torch
+ import numpy as np
+ # from network.covariance_parametrization import DiagonalParam
+ from network.covariance_parametrization import DiagonalParam, CovarianceParam
++import math
+ 
+ MIN_LOG_STD = np.log(1e-3)
+ 
+@@ -41,6 +42,8 @@ def loss_distribution_diag(pred, pred_logstd, targ):
+ 
+     # pred_logstd = torch.maximum(pred_logstd, MIN_LOG_STD * torch.ones_like(pred_logstd))
+     loss = ((pred - targ).pow(2)) / (2 * torch.exp(2 * pred_logstd)) + pred_logstd
++    # print(loss.shape)
++    
+     return loss
+ 
+ def loss_distribution_full_cov(pred: torch.Tensor, 
+@@ -174,13 +177,119 @@ def criterion_distribution(pred, pred_logstd, targ):
+     )
+ 
+ 
++
++# ### first verion
++# def loss_distribution_covariance(pred_mean, pred_V, pred_inv, targ):
++#     """
++#     Negative log likelihood loss for Gaussian with predicted mean and covariance.
++#     pred_mean: (B,3)
++#     pred_V: (B,3,3) - orthonormal basis (equivariant)
++#     pred_inv: (B,3) - invariant log std (diagonal)
++#     targ: (B,3)
++#     """
++#     # pred_inv = torch.clamp(pred_inv, min=MIN_LOG_STD)
++#     cov_diag = torch.exp(pred_inv * 2)
++#     cov_diag_matrix = torch.diag_embed(cov_diag)  # (B,3,3)
++#     pred_cov = torch.matmul(pred_V, torch.matmul(cov_diag_matrix, pred_V.transpose(1,2)))  # (B,3,3)
++
++#     residual = targ - pred_mean  # (B,3)
++#     residual = residual.unsqueeze(-1)  # (B,3,1)
++    
++#     try:
++#         L = torch.linalg.cholesky(pred_cov)
++#         y = torch.linalg.solve_triangular(L, residual, upper=False)
++#         quad_form = torch.sum(y ** 2, dim=(1,2))  # (B,)
++#         log_det = 2 * torch.sum(torch.log(torch.diagonal(L, dim1=1, dim2=2)), dim=1)  # (B,)
++#     except RuntimeError:
++#         inv_cov = torch.linalg.inv(pred_cov)
++#         quad_form = torch.einsum('bi,bij,bj->b', residual.squeeze(-1), inv_cov, residual.squeeze(-1))
++#         sign, log_det = torch.slogdet(pred_cov)
++#         # Optionally check sign == 1 here
++    
++#     # const = 3 * torch.log(torch.tensor(2 * 3.141592653589793, device=pred_mean.device))
++#     loss = 0.5 * (quad_form + log_det)
++#     # print(loss.mean().shape)
++#     return loss.mean()
++# ### first verion
++
++### first-2 verion / logstd scale
++def loss_distribution_covariance(pred_mean, pred_V, pred_inv, targ,
++                                        min_log_std=MIN_LOG_STD,
++                                        add_const=False):
++    """
++    NLL treating pred_inv as per-dim log(sigma).
++    pred_mean: (B,D)
++    pred_V:    (B,D,D)  orthonormal basis
++    pred_inv:  (B,D)    log(sigma) for each basis direction
++    targ:      (B,D)
++    returns: scalar mean NLL over batch
++    """
++    B, D = pred_mean.shape
++
++    # 1) clamp predicted log-std for numerical stability
++    pred_logstd = pred_inv   # (B,D)
++    # pred_logstd = torch.clamp(pred_inv, min=min_log_std)   # (B,D)
++    var = torch.exp(2.0 * pred_logstd)                     # sigma^2, (B,D)
++
++    # 2) project residual into V-basis: r' = V^T (targ - mean)
++    
++    residual = (targ - pred_mean).unsqueeze(-1)            # (B,D,1)
++    r_proj = torch.matmul(pred_V.transpose(1, 2), residual).squeeze(-1)  # (B,D)
++
++    # 3) per-dimension NLL (same scaling as your diag loss)
++    #    (r'^2) / (2 * sigma^2) + log(sigma)
++    per_dim = 0.5 * (r_proj ** 2) / var + pred_logstd     # (B,D)
++    # # 4) sum dims to get per-sample NLL and average over batch
++    # per_sample_nll = per_dim.sum(dim=1)                   # (B,)
++    # per_sample_nll.mean()
++    
++    return per_dim
++### first-2 verion
++
++# ### second verion
++# def loss_distribution_covariance(pred_mean, pred_V, pred_inv, targ):
++#     """
++#     Negative log-likelihood loss for multivariate Gaussian with full covariance.
++    
++#     pred_mean: (B, 3)
++#     pred_V: (B, 3, 3) - orthonormal basis (rotation matrix, equivariant)
++#     pred_inv: (B, 3) - log stds (invariant)
++#     targ: (B, 3)
++    
++#     Computes NLL: 0.5 * [ (x - μ)^T Σ^{-1} (x - μ) + log|Σ| + D * log(2π) ]
++#     """
++#     eps = 0
++#     B, D = pred_mean.shape
++
++#     # Compute full covariance matrix: Σ = V * diag(std^2) * V^T
++#     std = torch.exp(pred_inv)  # (B, 3)
++#     cov_diag_matrix = torch.diag_embed(std ** 2)  # (B, 3, 3)
++#     cov = pred_V @ cov_diag_matrix @ pred_V.transpose(1, 2)  # (B, 3, 3)
++
++#     # Inverse and log determinant of Σ
++#     cov_inv = torch.linalg.inv(cov + eps * torch.eye(D, device=cov.device))  # (B, 3, 3)
++#     logdet = torch.logdet(cov + eps * torch.eye(D, device=cov.device))  # (B,)
++
++#     # Mahalanobis distance: (x - μ)^T Σ^{-1} (x - μ)
++#     residual = (targ - pred_mean).unsqueeze(-1)  # (B, 3, 1)
++#     maha = torch.matmul(residual.transpose(1, 2), torch.matmul(cov_inv, residual))  # (B, 1, 1)
++#     maha = maha.squeeze(-1).squeeze(-1)  # (B,)
++
++#     # Final NLL loss per example
++#     nll = 0.5 * (maha + logdet + D * torch.log(torch.tensor(2 * torch.pi, device=pred_mean.device)))
++
++#     return nll.mean()  # (B,) -> ()
++# ### second verion
++
+ """
+ Select loss function based on epochs
+ all variables on gpu
+ output:
+   loss: Nx3
+ """
+-def get_loss(pred, pred_logstd, targ, epoch):
++# def get_loss(pred, pred_logstd, targ, epoch):
++def get_loss(pred_mean, pred_V, pred_inv, targ, epoch):
++
+     """
+     if epoch < 10:
+         loss = loss_mse(pred, targ)
+@@ -189,12 +298,20 @@ def get_loss(pred, pred_logstd, targ, epoch):
+     """
+ 
+     # if epoch < 10:
++    # if epoch < 80:
+     if epoch < 20:
+-        pred_logstd = pred_logstd.detach()
++    #     # pred_logstd = pred_logstd.detach()
++        pred_inv = pred_inv.detach()
++        pred_V = pred_V.detach()
++
+     # print(pred_logstd[0])
+     # loss = loss_mse(pred, targ)
+     # pred_logstd = pred_logstd.detach()
++    
+     # loss = loss_distribution_diag(pred, pred_logstd, targ)
+-    # loss = loss_distribution_diag(pred, pred_logstd[:,:,0], targ)
+-    loss = loss_distribution_from_skew_L(pred, pred_logstd, targ)
++    # # loss = loss_distribution_diag(pred, pred_logstd[:,:,0], targ)
++    # loss = loss_distribution_from_skew_L(pred, pred_logstd, targ)
++    loss = loss_distribution_covariance(pred_mean, pred_V, pred_inv, targ)
++    # loss = loss_distribution_diag(pred_mean, pred_inv, targ)
++
+     return loss
+diff --git a/src/network/model_factory.py b/src/network/model_factory.py
+index 43de937..bb7b986 100644
+--- a/src/network/model_factory.py
++++ b/src/network/model_factory.py
+@@ -1,6 +1,12 @@
+ from network.model_resnet import BasicBlock1D, ResNet1D
++
+ # from network.ln_conv_2regress_nochannelmix import LN_BasicBlock1D, SO3EquivariantReluBracketLayers    #6D or 9D
+ # from network.ln_conv_2regress_nochannelmix_slope_1 import LN_BasicBlock1D, SO3EquivariantReluBracketLayers    #6D or 9D
++# from network.ln_conv_2regress_nochannelmix_slope_1_pca_cov import LN_BasicBlock1D, SO3EquivariantReluBracketLayers    #6D or 9D
++from network.ln_conv_2regress_nochannelmix_slope_0_pca_cov_fixlogstd import LN_BasicBlock1D, SO3EquivariantReluBracketLayers    #6D or 9D
++# from network.ln_conv_2regress_nochannelmix_slope_0_pca_cov import LN_BasicBlock1D, SO3EquivariantReluBracketLayers    #6D or 9D
++# from network.ln_conv_4regress_nochannelmix_slope_1_pca_cov import LN_BasicBlock1D, SO3EquivariantReluBracketLayers    #6D or 9D
++
+ # from network.ln_conv_2regress_nochannelmix_slope_1_onechannelmix import LN_BasicBlock1D, SO3EquivariantReluBracketLayers    #6D or 9D
+ # from network.ln_conv_2regress_nochannelmix_bias import LN_BasicBlock1D, SO3EquivariantReluBracketLayers    #6D or 9D
+ # from network.ln_conv_4regress_3layer_2incov_nochannelmix_slope_05_bias_fast import LN_BasicBlock1D, SO3EquivariantReluBracketLayers    #6D or 9D
+@@ -12,7 +18,8 @@ from network.model_resnet import BasicBlock1D, ResNet1D
+ # from network.ln_se_conv_2regress_chmix_bias import LN_BasicBlock1D, SO3EquivariantReluBracketLayers    #6D or 9D
+ 
+ # from network.ln_conv_2regress_nochannelmix_bias_avgpool import LN_BasicBlock1D, SO3EquivariantReluBracketLayers    #6D or 9D
+-from network.ln_cov_2regress_nochannelmix_bias import LN_BasicBlock1D, SO3EquivariantReluBracketLayers    #6D or 9D
++# from network.ln_cov_2regress_nochannelmix_bias import LN_BasicBlock1D, SO3EquivariantReluBracketLayers    #6D or 9D
++# from network.ln_cov_4regress_nochannelmix_bias import LN_BasicBlock1D, SO3EquivariantReluBracketLayers    #6D or 9D
+ 
+ from network.model_resnet_seq import ResNetSeq1D
+ from network.model_tcn import TlioTcn
+diff --git a/src/network/test.py b/src/network/test.py
+index a623acf..1066cd1 100644
+--- a/src/network/test.py
++++ b/src/network/test.py
+@@ -17,9 +17,10 @@ from scipy.interpolate import interp1d
+ from scipy.spatial.transform import Rotation
+ from torch.utils.data import DataLoader
+ from utils.dotdict import dotdict
+-from utils.utils import to_device
+ from utils.logging import logging
+ from utils.math_utils import *
++from utils.utils import to_device, embed_imu_to_so3, vec_2_so3_cov
++from models.lie_alg_util import vee
+ 
+ 
+ def compute_rpe(rpe_ns, ps, ps_gt, yaw, yaw_gt):
+@@ -186,6 +187,9 @@ def compute_metrics_and_plotting(args, net_attr_dict, traj_attr_dict):
+     metrics["ronin"]["mse_loss_y"] = float(mse_loss[1])
+     metrics["ronin"]["mse_loss_z"] = float(mse_loss[2])
+     metrics["ronin"]["mse_loss_avg"] = float(avg_mse_loss)
++    # metrics["ronin"]["likselihood_loss_x"] = float(likelihood_loss)
++    # metrics["ronin"]["likelihood_loss_y"] = float(likelihood_loss)
++    # metrics["ronin"]["likelihood_loss_z"] = float(likelihood_loss)
+     metrics["ronin"]["likelihood_loss_x"] = float(likelihood_loss[0])
+     metrics["ronin"]["likelihood_loss_y"] = float(likelihood_loss[1])
+     metrics["ronin"]["likelihood_loss_z"] = float(likelihood_loss[2])
+@@ -194,7 +198,8 @@ def compute_metrics_and_plotting(args, net_attr_dict, traj_attr_dict):
+     """ ------------ Data for plotting ----------- """
+     total_pred = net_attr_dict["preds"].shape[0]
+     pred_ts = (1.0 / args.sample_freq) * np.arange(total_pred)
+-    pred_sigmas = np.exp(net_attr_dict["preds_cov"])
++    # pred_sigmas = np.exp(net_attr_dict["preds_cov"])
++    pred_sigmas = net_attr_dict["preds_cov"]
+     plot_dict = {
+         "ts": ts,
+         "pos_pred": pos_pred,
+@@ -455,17 +460,30 @@ def get_inference(network, data_loader, device, epoch):
+     """
+     targets_all, preds_all, preds_cov_all, losses_all = [], [], [], []
+     targets_vel_all, preds_vel_all = [], []
++    losses_total_all = []
+     network.eval()
+ 
+     for bid, sample in enumerate(data_loader):
+         sample = to_device(sample, device)
+         feat = sample["feats"]["imu0"]
+         
+-        pred, pred_cov = network(feat)
+-        targ_vel =torch.zeros_like(pred)
++        # ## 1. cov estimation using lie neuron ##
++        # feat_embed = embed_imu_to_so3(feat) #[1024, 6, 600] -> [1024, 2, 3, 3, 600]
++        # vee_input = vee(feat_embed.permute(0,1,4,2,3), algebra_type='gl3').permute(0,3,1,2)  # [1024, 9, 2, 600]
++        # pred, pred_cov= network(vee_input.reshape(-1, vee_input.size(2), vee_input.size(3)))  # [1024*9, 2, 600]
++        # # pred_cov = vec_2_so3_cov(pred_cov)
++        # ## 1. cov estimation using lie neuron ##
++        
++        # ## 0. normal feature ##
++        # pred, pred_cov = network(feat)
++        # targ_vel =torch.zeros_like(pred)
++        
++        ## 2. use pc inv feature ##
++        pred, pred_V, pred_inv = network(feat)
+ 
+-        # targ = sample["targ_dt_World"][:,-1,:]
+-        targ = sample["vel_World"][:,-1,:]
++        targ_vel =torch.zeros_like(pred)
++        targ = sample["targ_dt_World"][:,-1,:]
++        # targ = sample["vel_World"][:,-1,:]
+         # targ = sample["targ_dt_Body"][:,-1,:]
+         # Only grab the last prediction in this case
+         if len(pred.shape) == 3:
+@@ -473,12 +491,28 @@ def get_inference(network, data_loader, device, epoch):
+             pred_cov = pred_cov[:,:,-1]
+         
+         assert len(pred.shape) == 2
+-        loss = get_loss(pred, pred_cov, targ, epoch)
+-
++        # loss = get_loss(pred, pred_cov, targ, epoch)
++        loss = get_loss(pred, pred_V, pred_inv, targ, epoch)
++        loss_total = torch.sum(loss, dim=1)  # [B]
++        
++        # pred_cov = torch.diagonal(pred_cov, offset=0, dim1=-2, dim2=-1)
++        
+         targets_all.append(torch_to_numpy(targ))
+         preds_all.append(torch_to_numpy(pred))
+-        preds_cov_all.append(torch_to_numpy(pred_cov))
++        
++        # preds_cov_all.append(torch_to_numpy(pred_cov))
++        cov_diag = torch.exp(pred_inv * 2)                      # (B,D)
++        cov_diag_matrix = torch.diag_embed(cov_diag)            # (B,D,D)
++        pred_cov = pred_V @ cov_diag_matrix @ pred_V.transpose(1,2)  # (B,D,D)
++        diag_var = torch.diagonal(pred_cov, dim1=1, dim2=2)     # (B,D)
++        preds_cov_all.append(diag_var.detach().cpu().numpy())
++        # preds_cov_all.append(torch_to_numpy(pred_inv))
++        # print(pred_inv)
++        
+         losses_all.append(torch_to_numpy(loss))
++        losses_total_all.append(torch_to_numpy(loss_total))
++        # losses_all.append(np.array([torch_to_numpy(loss)]))  # shape (1,)
++        
+         targets_vel_all.append(torch_to_numpy(targ_vel))
+         preds_vel_all.append(torch_to_numpy(pred))
+ 
+@@ -486,6 +520,7 @@ def get_inference(network, data_loader, device, epoch):
+     preds_all = np.concatenate(preds_all, axis=0)
+     preds_cov_all = np.concatenate(preds_cov_all, axis=0)
+     losses_all = np.concatenate(losses_all, axis=0)
++    losses_total_all = np.concatenate(losses_total_all, axis=0)
+     targets_vel_all = np.concatenate(targets_vel_all, axis=0)
+     preds_vel_all = np.concatenate(preds_vel_all, axis=0)
+ 
+@@ -495,6 +530,7 @@ def get_inference(network, data_loader, device, epoch):
+         # "preds": targets_all,
+         "preds_cov": preds_cov_all,
+         "losses": losses_all,
++        "losses_total": losses_total_all,
+         "targets_vel": targets_vel_all,
+         "preds_vel": preds_vel_all,
+     }
+@@ -605,6 +641,8 @@ def net_test(args):
+ 
+     # initialize containers
+     all_metrics = {}
++    dataset_losses_xyz = []
++    dataset_losses_total = []
+ 
+     for data in test_list:
+         logging.info(f"Processing {data}...")
+@@ -647,6 +685,9 @@ def net_test(args):
+         metrics, plot_dict = compute_metrics_and_plotting(
+             args, net_attr_dict, traj_attr_dict
+         )
++        dataset_losses_xyz.append(net_attr_dict["losses"])
++        dataset_losses_total.append(net_attr_dict["losses_total"])
++        
+         logging.info(metrics)
+         all_metrics[data] = metrics
+ 
+@@ -676,4 +717,21 @@ def net_test(args):
+         except Exception as e:
+             raise e
+ 
++    if len(dataset_losses_xyz) > 0:
++        dataset_losses_xyz = np.concatenate(dataset_losses_xyz, axis=0)      # [N,3]
++        dataset_losses_total = np.concatenate(dataset_losses_total, axis=0)  # [N]
++
++        dataset_summary = {
++            "num_windows": int(dataset_losses_total.shape[0]),
++            "nll_x": float(np.mean(dataset_losses_xyz[:, 0])),
++            "nll_y": float(np.mean(dataset_losses_xyz[:, 1])),
++            "nll_z": float(np.mean(dataset_losses_xyz[:, 2])),
++            "nll_avg_xyz": float(np.mean(dataset_losses_xyz)),
++            "nll_total": float(np.mean(dataset_losses_total)),
++        }
++
++        with open(osp.join(args.out_dir, "dataset_summary.json"), "w") as f:
++            json.dump(dataset_summary, f, indent=1)
++        
++        
+     return
+diff --git a/src/network/train.py b/src/network/train.py
+index 3a5b862..c74130f 100644
+--- a/src/network/train.py
++++ b/src/network/train.py
+@@ -40,16 +40,20 @@ def get_inference(network, data_loader, device, epoch, transforms=[]):
+         for transform in transforms:
+             sample = transform(sample)
+         feat = sample["feats"]["imu0"]
+-        ## 1. cov estimation using lie neuron ##
+-        feat_embed = embed_imu_to_so3(feat) #[1024, 6, 600] -> [1024, 2, 3, 3, 600]
+-        vee_input = vee(feat_embed.permute(0,1,4,2,3), algebra_type='gl3').permute(0,3,1,2)  # [1024, 9, 2, 600]
+-        pred, pred_cov= network(vee_input.reshape(-1, vee_input.size(2), vee_input.size(3)))  # [1024*9, 2, 600]
+-        # pred_cov = vec_2_so3_cov(pred_cov)
+-        ## 1. cov estimation using lie neuron ##
+         
+-        ## 0. normal feature ##
++        # ## 1. cov estimation using lie neuron ##
++        # feat_embed = embed_imu_to_so3(feat) #[1024, 6, 600] -> [1024, 2, 3, 3, 600]
++        # vee_input = vee(feat_embed.permute(0,1,4,2,3), algebra_type='gl3').permute(0,3,1,2)  # [1024, 9, 2, 600]
++        # pred, pred_cov= network(vee_input.reshape(-1, vee_input.size(2), vee_input.size(3)))  # [1024*9, 2, 600]
++        # # pred_cov = vec_2_so3_cov(pred_cov)
++        # ## 1. cov estimation using lie neuron ##
++        
++        # ## 0. normal feature ##
+         # pred, pred_cov = network(feat)
+         
++        ## 2. use pc inv feature ##
++        pred, pred_V, pred_inv = network(feat)
++        
+         if len(pred.shape) == 2:
+             targ = sample["targ_dt_World"][:,-1,:]
+             # targ = sample["vel_World"][:,-1,:]
+@@ -58,12 +62,16 @@ def get_inference(network, data_loader, device, epoch, transforms=[]):
+             # Leave off zeroth element since it's 0's. Ex: Net predicts 199 if there's 200 GT
+             targ = sample["targ_dt_World"][:,1:,:].permute(0,2,1)
+ 
+-        loss = get_loss(pred, pred_cov, targ, epoch)
++        # loss = get_loss(pred, pred_cov, targ, epoch)
++        loss = get_loss(pred, pred_V, pred_inv, targ, epoch)
+ 
+         targets_all.append(torch_to_numpy(targ))
+         preds_all.append(torch_to_numpy(pred))
+-        preds_cov_all.append(torch_to_numpy(pred_cov))
++        # preds_cov_all.append(torch_to_numpy(pred_cov))
++        preds_cov_all.append(torch_to_numpy(pred_inv))
++        
+         losses_all.append(torch_to_numpy(loss))
++        # losses_all.append(np.array([torch_to_numpy(loss)]))  # shape (1,)
+ 
+     targets_all = np.concatenate(targets_all, axis=0)
+     preds_all = np.concatenate(preds_all, axis=0)
+@@ -93,15 +101,19 @@ def do_train(network, train_loader, device, epoch, optimizer, transforms=[]):
+             sample = transform(sample)
+         feat = sample["feats"]["imu0"]
+         optimizer.zero_grad()
+-        ## 1. cov estimation using lie neuron ##
+-        feat_embed = embed_imu_to_so3(feat) #[1024, 6, 600] -> [1024, 2, 3, 3, 600]
+-        vee_input = vee(feat_embed.permute(0,1,4,2,3), algebra_type='gl3').permute(0,3,1,2)  # [1024, 9, 2, 600]
+-        pred, pred_cov= network(vee_input.reshape(-1, vee_input.size(2), vee_input.size(3)))  # [1024*9, 2, 600]
+-        # pred_cov = vec_2_so3_cov(pred_cov)
+-        ## 1. cov estimation using lie neuron ##
+         
+-        ## 0. normal feature ##
++        # ## 1. cov estimation using lie neuron ##
++        # feat_embed = embed_imu_to_so3(feat) #[1024, 6, 600] -> [1024, 2, 3, 3, 600]
++        # vee_input = vee(feat_embed.permute(0,1,4,2,3), algebra_type='gl3').permute(0,3,1,2)  # [1024, 9, 2, 600]
++        # pred, pred_cov= network(vee_input.reshape(-1, vee_input.size(2), vee_input.size(3)))  # [1024*9, 2, 600]
++        # # pred_cov = vec_2_so3_cov(pred_cov)
++        # ## 1. cov estimation using lie neuron ##
++        
++        # ## 0. normal feature ##
+         # pred, pred_cov = network(feat)
++        
++        ## 2. use pc inv feature ##
++        pred, pred_V, pred_inv = network(feat)
+ 
+         if len(pred.shape) == 2:
+             targ = sample["targ_dt_World"][:,-1,:]
+@@ -111,16 +123,20 @@ def do_train(network, train_loader, device, epoch, optimizer, transforms=[]):
+             # Leave off zeroth element since it's 0's. Ex: Net predicts 199 if there's 200 GT
+             targ = sample["targ_dt_World"][:,1:,:].permute(0,2,1)
+ 
+-        loss = get_loss(pred, pred_cov, targ, epoch)
+-
++        # loss = get_loss(pred, pred_cov, targ, epoch)
++        loss = get_loss(pred, pred_V, pred_inv, targ, epoch)
+         train_targets.append(torch_to_numpy(targ))
+         train_preds.append(torch_to_numpy(pred))
+-        train_preds_cov.append(torch_to_numpy(pred_cov))
++        # train_preds_cov.append(torch_to_numpy(pred_cov))
++        train_preds_cov.append(torch_to_numpy(pred_inv))
++        
+         train_losses.append(torch_to_numpy(loss))
++        loss = loss.mean()
++        # train_losses.append(np.array([torch_to_numpy(loss)]))  # shape (1,)
++        
+             
+         #print("Loss full: ", loss)
+ 
+-        loss = loss.mean()
+         loss.backward()
+ 
+         #print("Loss mean: ", loss.item())
+@@ -356,6 +372,7 @@ def net_train(args):
+     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+         optimizer, factor=0.1, patience=10, verbose=True, eps=1e-12
+     )
++    # scheduler = None
+     logging.info(f"Optimizer: {optimizer}, Scheduler: {scheduler}")
+ 
+     start_epoch = 0
+diff --git a/src/tracker/imu_tracker.py b/src/tracker/imu_tracker.py
+index f5df535..19716b8 100644
+--- a/src/tracker/imu_tracker.py
++++ b/src/tracker/imu_tracker.py
+@@ -33,6 +33,7 @@ class ImuTracker:
+         imu_calib: Optional[ImuCalib] = None,
+         force_cpu=False,
+         vio_path = None,
++        out_dir = None,
+     ):
+ 
+         config_from_network = dotdict({})
+@@ -140,6 +141,8 @@ class ImuTracker:
+         self.has_done_first_update = False
+         
+         self.vio_path = vio_path
++        self.out_dir = out_dir
++        self.vio_data = np.load(self.vio_path)
+ 
+     @jit(forceobj=True, parallel=False, cache=False)
+     def _get_imu_samples_for_network(self, t_begin_us, t_oldest_state_us, t_end_us):
+@@ -213,16 +216,17 @@ class ImuTracker:
+ 
+     def _compensate_measurement_with_initial_calibration(self, gyr_raw, acc_raw):
+         if self.icalib:
+-            # #logging.info("Using bias from initial calibration")
+-            # init_ba = self.icalib.accelBias
+-            # init_bg = self.icalib.gyroBias
+-            # # calibrate raw imu data
+-            # acc_biascpst, gyr_biascpst = self.icalib.calibrate_raw(
+-            #     acc_raw, gyr_raw
+-            # )  # removed offline bias and scaled
+-            init_ba = np.zeros((3, 1))
+-            init_bg = np.zeros((3, 1))
+-            acc_biascpst, gyr_biascpst = acc_raw, gyr_raw
++            #logging.info("Using bias from initial calibration")
++            init_ba = self.icalib.accelBias
++            init_bg = self.icalib.gyroBias
++            # calibrate raw imu data
++            acc_biascpst, gyr_biascpst = self.icalib.calibrate_raw(
++                acc_raw, gyr_raw
++            )  # removed offline bias and scaled
++            
++            # init_ba = np.zeros((3, 1))
++            # init_bg = np.zeros((3, 1))
++            # acc_biascpst, gyr_biascpst = acc_raw, gyr_raw
+         else:
+             #logging.info("Using zero bias")
+             init_ba = np.zeros((3, 1))
+@@ -289,21 +293,21 @@ class ImuTracker:
+ 
+         # Eventually calibrate
+         if self.icalib:
+-            # # calibrate raw imu data with offline calibation
+-            # # this is used for network feeding
+-            # acc_biascpst, gyr_biascpst = self.icalib.calibrate_raw(
+-            #     acc_raw, gyr_raw
+-            # )  # removed offline bias and scaled
+-
+-            # # calibrate raw imu data with offline calibation scale
+-            # # this is used for the filter. By not applying offline bias
+-            # # we expect the filter to estimate bias similar to the offline
+-            # # calibrated one
+-            # acc_raw, gyr_raw = self.icalib.scale_raw(
+-            #     acc_raw, gyr_raw
+-            # )  # only offline scaled - into the filter
+-            acc_biascpst = acc_raw
+-            gyr_biascpst = gyr_raw
++            # calibrate raw imu data with offline calibation
++            # this is used for network feeding
++            acc_biascpst, gyr_biascpst = self.icalib.calibrate_raw(
++                acc_raw, gyr_raw
++            )  # removed offline bias and scaled
++
++            # calibrate raw imu data with offline calibation scale
++            # this is used for the filter. By not applying offline bias
++            # we expect the filter to estimate bias similar to the offline
++            # calibrated one
++            acc_raw, gyr_raw = self.icalib.scale_raw(
++                acc_raw, gyr_raw
++            )  # only offline scaled - into the filter
++            # acc_biascpst = acc_raw
++            # gyr_biascpst = gyr_raw
+         else:
+             acc_biascpst = acc_raw
+             gyr_biascpst = gyr_raw
+@@ -312,12 +316,12 @@ class ImuTracker:
+         do_interpolation_of_imu = t_us >= self.next_interp_t_us
+         do_augmentation_and_update = t_us >= self.next_aug_t_us
+ 
+-        # if augmenting the state, check that we compute interpolated measurement also
+-        assert (
+-            do_augmentation_and_update and do_interpolation_of_imu
+-        ) or not do_augmentation_and_update, (
+-            "Augmentation and interpolation does not match!"
+-        )
++        # # if augmenting the state, check that we compute interpolated measurement also
++        # assert (
++        #     do_augmentation_and_update and do_interpolation_of_imu
++        # ) or not do_augmentation_and_update, (
++        #     "Augmentation and interpolation does not match!"
++        # )
+ 
+         # augmentation propagation / propagation
+         # propagate at IMU input rate, augmentation propagation depends on t_augmentation_us
+@@ -328,12 +332,52 @@ class ImuTracker:
+             self._add_interpolated_imu_to_buffer(acc_biascpst, gyr_biascpst, t_us)
+             
+         if "so3" in self.vio_path:
+-            rotation_info = np.load("./../../imu-equivariant-learning/so3_local_data_bodyframe2/rpy_values.npy")
++            # rotation_info = np.load("./../../imu-equivariant-learning/so3_local_data_bodyframe2/rpy_values.npy")
++            rotation_info = np.load("./../../imu-equivariant-learning/local_data_bodyframe/so3_60/rpy_values.npy")
+             rotation_rpy = rotation_info[i,:]
+             m_b2bprime = Rotation.from_euler('xyz', rotation_rpy, degrees=False).as_matrix()
+         else:
+             m_b2bprime = np.eye(3)
++        
++        # ######### if using gravity compensated body acceleration ###
++        # if "comp" in self.out_dir and "notcomp" not in self.out_dir:
++        #     # print("compensated!")   
++        #     # assert False
++        #     vio_data = self.vio_data
++        #     # print(t_us, vio_data[-1,0])
++        #     if t_us < vio_data[0,0] or t_us > vio_data[-1,0]:
++        #         return
++        #     g_world = np.array([0, 0, 9.81]).reshape(-1,1)
++        #     g_world = m_b2bprime @ g_world
+             
++        #     # # print(self.out_dir)
++        #     ####
++        #     ####
++        #     # time_gt = vio_data[:, 0]
++        #     # qxyzw_World_Device = vio_data[:, -10:-6]
++        #     # # interp_funcs_quaternion = [interp1d(time_gt, qxyzw_World_Device[:, i], fill_value="extrapolate") for i in range(qxyzw_World_Device.shape[1])]
++        #     # # interp_funcs_quaternion = [interp1d(time_gt, qxyzw_World_Device[:, i], fill_value=(qxyzw_World_Device[0, i], qxyzw_World_Device[-1, i]), bounds_error=False) for i in range(qxyzw_World_Device.shape[1])]
++        #     # interp_funcs_quaternion = [interp1d(time_gt, qxyzw_World_Device[:, i]) for i in range(qxyzw_World_Device.shape[1])]
++        #     # quaternion_gt = np.array([interp_func(t_us) for interp_func in interp_funcs_quaternion])
++        #     # quaternion_gt = quaternion_gt / np.linalg.norm(quaternion_gt)
++        #     # R_gt = Rotation.from_quat(quaternion_gt).as_matrix()  # world -> bd
++        #     # acc_body = R_gt.T @ g_world
++        #     R_filter, _, _, _, _ = self.filter.get_evolving_state()
++        #     acc_body = R_filter.T @ g_world
++        #     ####
++        #     ####
++            
++        #     # ## apply calibration in gravity ##
++        #     # gyro_body = np.zeros((3,1))
++        #     # # print("acc_body : ", acc_body)
++        #     # acc_body, _ = self.imu_calib.calibrate_raw(acc_body, gyro_body)
++        #     # # print("acc_body_cal : ", acc_body)
++        #     # print("acc_biascpst : ", acc_biascpst)
++        #     acc_biascpst = acc_biascpst - acc_body
++        #     # ## apply calibration in gravity ##
++        # ######### if using gravity compensated body acceleration ###
++        
++        
+         self.filter.propagate(
+             acc_raw, gyr_raw, t_us, t_augmentation_us=t_augmentation_us, m_b2bprime = m_b2bprime
+         )
+@@ -414,7 +458,7 @@ class ImuTracker:
+             # vio_Riz = Rotation.from_euler("z", ri_z).as_matrix()
+             # vio_Rizt = vio_Riz.T
+             # meas = np.matmul(vio_Rizt, targ_dt_World)           
+-            # meas_cov = 0.01 * np.eye(3)
++            # meas_cov = 0.1 * np.eye(3)
+             # #### use meas_gt ####
+             
+         # filter update
+diff --git a/src/tracker/imu_tracker_runner.py b/src/tracker/imu_tracker_runner.py
+index 9ad88a9..befc739 100644
+--- a/src/tracker/imu_tracker_runner.py
++++ b/src/tracker/imu_tracker_runner.py
+@@ -119,6 +119,7 @@ class ImuTrackerRunner:
+             imu_calib=imu_calib,
+             #force_cpu=True,
+             vio_path = vio_path,
++            out_dir = args.out_dir,
+         )
+ 
+         # output
+diff --git a/src/tracker/meas_source_torchscript.py b/src/tracker/meas_source_torchscript.py
+index a25d6ca..99fd672 100644
+--- a/src/tracker/meas_source_torchscript.py
++++ b/src/tracker/meas_source_torchscript.py
+@@ -1,6 +1,6 @@
+ import numpy as np
+ import torch
+-from network.covariance_parametrization import DiagonalParam
++from network.covariance_parametrization import DiagonalParam, EquivCovariance
+ from utils.logging import logging
+ 
+ 
+@@ -38,7 +38,10 @@ class MeasSourceTorchScript:
+             outputs = self.net(*netargs)
+ 
+             if type(outputs) == tuple:  # Legacy
+-                meas, meas_cov = outputs
++                # meas, meas_cov = outputs
++                meas, meas_V, meas_cov = outputs
++                meas_cov = meas_cov.reshape(1, -1)
++                
+             elif type(outputs) == dict:  # New output format
+                 meas, meas_cov = outputs["pred"], outputs["pred_log_std"]
+                 # If this is the case, the network predicts over the whole window at high frequency.
+@@ -51,8 +54,18 @@ class MeasSourceTorchScript:
+             assert meas_cov.dim() == 2
+ 
+             meas = meas.cpu().detach().numpy()
+-            meas_cov[meas_cov < -4] = -4  # exp(-3) =~ 0.05
+-            meas_cov = DiagonalParam.vec2Cov(meas_cov).cpu().detach().numpy()[0, :, :]
++            
++            # meas_cov[meas_cov < -4] = -4  # exp(-3) =~ 0.05
++            # meas_cov = DiagonalParam.vec2Cov(meas_cov).cpu().detach().numpy()[0, :, :]
++            
++            meas_cov_tensor = EquivCovariance.vec2Cov(meas_V, meas_cov)
++            meas_cov = meas_cov_tensor.squeeze(0).cpu().detach().numpy()
++            
++            # alpha = 3.0
++            # beta = 1e-2
++            alpha = 5.0
++            beta = 5e-2
++            meas_cov = alpha * meas_cov + beta * np.eye(3)
+             meas = meas.reshape((3, 1))
+ 
+             # Our equivalent of zero position update (TODO need stronger prior to keep it still)
+diff --git a/src/tracker/scekf.py b/src/tracker/scekf.py
+index 1635d20..31da8d9 100644
+--- a/src/tracker/scekf.py
++++ b/src/tracker/scekf.py
+@@ -494,22 +494,22 @@ class ImuMSCKF:
+             exit(1)
+         
+         
+-        # #### using body displacement ####
+-        # # Rb2w = self.state.s_R.copy()
++        #### using body displacement ####
++        # Rb2w = self.state.s_R.copy()
+         
+-        # Rb2w, _ = self.get_past_state(t_begin_us + 500000)
+-        # # Rb2w, _ = self.get_past_state(t_end_us)
++        Rb2w, _ = self.get_past_state(t_begin_us + 500000)
++        # Rb2w, _ = self.get_past_state(t_end_us)
+         
+-        # Rbi2w, _ = self.get_past_state(t_begin_us)
+-        # ri_z = Rw2g = Rotation.from_matrix(Rbi2w).as_euler("xyz")[2]
+-        # vio_Riz = Rotation.from_euler("z", ri_z).as_matrix()
+-        # vio_Rizt = vio_Riz.T
++        Rbi2w, _ = self.get_past_state(t_begin_us)
++        ri_z = Rw2g = Rotation.from_matrix(Rbi2w).as_euler("xyz")[2]
++        vio_Riz = Rotation.from_euler("z", ri_z).as_matrix()
++        vio_Rizt = vio_Riz.T
+         
+-        # meas = vio_Rizt @ Rb2w @ meas 
+-        # # meas = Rb2w @ meas 
++        meas = vio_Rizt @ Rb2w @ meas 
++        # meas = Rb2w @ meas 
+         
+-        # meas_cov = (vio_Rizt @ Rb2w) @ meas_cov @ (vio_Rizt @ Rb2w).T
+-        # #### using body displacement ####
++        meas_cov = (vio_Rizt @ Rb2w) @ meas_cov @ (vio_Rizt @ Rb2w).T
++        #### using body displacement ####
+         
+         self.R = self.meascov_scale * meas_cov
+         # set constant measurement covariance

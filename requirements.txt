@@ -16,3 +16,7 @@ einops                # 0.8.2
 wandb>=0.18           # 0.27.0 (optional: Air-IO logging; run with WANDB_MODE=offline or --log to disable)
 optuna>=3.0           # 4.8.0 (optional: hyper-parameter sweeps)
 git+https://github.com/utiasSTARS/liegroups@master   # 1.1.0, used by DiagRotParam in covariance_parametrization.py
+# optional extras
+# fvcore          # FLOP counting helpers only (FlopCountAnalysis); imports are guarded
+# open3d          # --visualize window of src/main_filter.py only
+# casadi          # airio/EKF/casADI_EKF (upstream AirIO EKF), not used for the paper

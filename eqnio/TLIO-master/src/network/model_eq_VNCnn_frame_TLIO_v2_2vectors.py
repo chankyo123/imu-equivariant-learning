@@ -6,7 +6,10 @@ from einops import rearrange, repeat, reduce
 from einops.layers.torch import Rearrange, Reduce
 
 from network.model_resnet import BasicBlock1D, ResNet1D 
-from fvcore.nn import FlopCountAnalysis
+try:  # optional, only used for FLOP counting
+    from fvcore.nn import FlopCountAnalysis
+except ImportError:  # pragma: no cover
+    FlopCountAnalysis = None
 import time
 from network.timing import CudaTimer
 

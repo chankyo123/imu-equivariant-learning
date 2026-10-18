@@ -9,7 +9,11 @@ from scipy.interpolate import interp1d
 from scipy.spatial.transform import Rotation
 from tracker.imu_calib import ImuCalib
 from tracker.imu_tracker import ImuTracker
-from utils.o3d_visualizer import O3dVisualizer
+try:  # open3d is optional; only needed for --visualize
+    from utils.o3d_visualizer import O3dVisualizer
+except ImportError:  # pragma: no cover
+    O3dVisualizer = None
+
 from utils.dotdict import dotdict
 from utils.logging import logging
 

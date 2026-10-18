@@ -16,7 +16,7 @@ import torch.nn as nn
 from scipy.spatial.transform import Rotation
 
 # Local imports
-from vn_gru import VNLinear, VNLeakyReLU, VNNorm, VNGRUCell, VNGRU
+from model.vn_gru import VNLinear, VNLeakyReLU, VNNorm, VNGRUCell, VNGRU
 
 
 def random_rotation_matrix(device, dtype):

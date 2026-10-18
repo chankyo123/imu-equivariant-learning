@@ -4,7 +4,10 @@ The code is based on the original ResNet implementation from torchvision.models.
 
 import torch.nn as nn
 import torch
-from fvcore.nn import FlopCountAnalysis
+try:  # optional, only used by the FLOP-count helper below
+    from fvcore.nn import FlopCountAnalysis
+except ImportError:  # pragma: no cover
+    FlopCountAnalysis = None
 import time
 from network.timing import CudaTimer
 

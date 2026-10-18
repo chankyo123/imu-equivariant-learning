@@ -9,8 +9,11 @@ University of Michigan, [CURLY Lab](https://curly.engin.umich.edu/)
 *Conference on Robot Learning (CoRL) 2026, Austin, TX.*
 Paper and reviews: https://openreview.net/forum?id=nl8iBTm3Mt
 
-> This repository supersedes `imu-equivariant-learning` (the yaw-equivariant network-coupled
-> inertial odometry code it grew out of). The old code is preserved in the git history.
+> **Formerly `imu-equivariant-learning`.** This repository started in 2023 as a yaw-equivariant
+> network-coupled inertial odometry code base. GINIO is the same project matured to full SO(3)
+> equivariance with a covariance interface, and it is now named after the CoRL 2026 paper. The last
+> pre-GINIO version is tagged [`imu-equivariant-learning-final`](../../releases/tag/imu-equivariant-learning-final);
+> old links redirect here.
 
 ## Overview
 

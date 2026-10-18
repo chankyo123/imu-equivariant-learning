@@ -2,12 +2,13 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 # data and model artifacts (download separately, see README)
-local_data/
-local_data*/
-models/
-models_*/
-checkpoints/*/
-!checkpoints/MANIFEST.md
+/local_data/
+/local_data*/
+eqnio/TLIO-master/local_data/
+/models/
+/models_*/
+/checkpoints/*/
+!/checkpoints/MANIFEST.md
 airio/experiments/
 airio/logs/
 airio/wandb/

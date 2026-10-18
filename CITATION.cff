@@ -1,0 +1,35 @@
+cff-version: 1.2.0
+message: "If you use GINIO in your research, please cite the paper below."
+title: "GINIO: A Geometric SO(3)-Equivariant Interface for Neural Inertial Odometry"
+type: software
+repository-code: "https://github.com/chankyo123/GINIO"
+url: "https://openreview.net/forum?id=nl8iBTm3Mt"
+license: MIT
+authors:
+  - family-names: Kim
+    given-names: Chankyo
+  - family-names: Zhu
+    given-names: Minghan
+  - family-names: Lin
+    given-names: Tzu-Yuan
+  - family-names: Rattan
+    given-names: Avantika
+  - family-names: Ghaffari
+    given-names: Maani
+preferred-citation:
+  type: conference-paper
+  title: "GINIO: A Geometric SO(3)-Equivariant Interface for Neural Inertial Odometry"
+  authors:
+    - family-names: Kim
+      given-names: Chankyo
+    - family-names: Zhu
+      given-names: Minghan
+    - family-names: Lin
+      given-names: Tzu-Yuan
+    - family-names: Rattan
+      given-names: Avantika
+    - family-names: Ghaffari
+      given-names: Maani
+  collection-title: "Proceedings of The 10th Conference on Robot Learning (CoRL)"
+  year: 2026
+  url: "https://openreview.net/forum?id=nl8iBTm3Mt"

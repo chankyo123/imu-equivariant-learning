@@ -111,6 +111,14 @@ python src/main_filter.py --root_dir local_data/tlio_golden/ --model_path models
 python src/plot_filter_state.py --root_dir local_data/tlio_golden/ --log_dir filter_outputs/ginio_w --no-make_plots --no-save_fig
 ```
 
+Optional training/evaluation switches (ported from the rebuttal study, off by default):
+`--so3_train_aug [--so3_train_aug_max_deg 180]` rotates each training window and its vector targets by
+a random rotation (world- and sensor-frame); `--freeze_mean --model_path <base.pt>` loads a trained
+model, freezes backbone and mean head and trains only the covariance head (the `ln_resnet_cov_diag`
+architecture is the diagonal-head twin of `ln_resnet_cov` for this matched-pair study);
+`--test_perturb_type {gravity,lfa,so3} --test_perturb_deg D` applies the frame-estimation-mismatch
+perturbations of Supplement Table 10 at test time.
+
 Important flags: `--body_frame` is a string (`"True"`/`"False"`); always pass `--imu_freq 200`
 (the window length is `int(200 * window_time)` samples, so on 100 Hz NanoBench `--window_time 1.0`
 is a 2 s window); `--cov_type {diag, eq_spec, eq_chol}` is inferred from the architecture when omitted.

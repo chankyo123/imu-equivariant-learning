@@ -972,10 +972,23 @@ def net_test(args):
         start_t = time.time()
         
         test_transforms = []
-        # ##UNCOMMENT IF WANT TO ADD BIAS IN TEST DATASET
-        # test_transforms = seq_dataset.get_test_transforms_bodyframe() 
-        # # assert False
-        # ##UNCOMMENT IF WANT TO ADD BIAS IN TEST DATASET
+        # ----- test-time perturbation (frame-estimation mismatch / SO(3) / LFA noise) -----
+        _pt = getattr(args, "test_perturb_type", "none")
+        _pd = float(getattr(args, "test_perturb_deg", 0.0))
+        if _pt != "none" and _pd > 0:
+            from dataloader.data_transform import (
+                TransformLFARelativeRotationNoise,
+                TransformTestSO3Rotation,
+                TransformTestGravityTilt,
+            )
+            torch.manual_seed(int(getattr(args, "test_perturb_seed", 0)))
+            if _pt == "gravity":
+                test_transforms.append(TransformTestGravityTilt(["imu0"], _pd))
+            elif _pt == "lfa":
+                test_transforms.append(TransformLFARelativeRotationNoise(["imu0"], max_deg=_pd, mode="smooth"))
+            elif _pt == "so3":
+                test_transforms.append(TransformTestSO3Rotation(["imu0"], _pd))
+            logging.info(f"Test-time perturbation: type={_pt} deg={_pd}")
         
         # net_attr_dict = get_inference(network, seq_loader, device, epoch=50, body_frame_3regress = body_frame_3regress, body_frame = body_frame, transforms = test_transforms)
         cov_type = get_cov_type_from_arch(args.arch)

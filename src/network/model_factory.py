@@ -97,6 +97,16 @@ def get_model(arch, net_config, input_dim=6, output_dim=3):
                 [2, 2, 2, 2],
                 net_config["in_dim"]
             )
+    elif arch == "ln_resnet_cov_diag":
+            # Same backbone/mean as ln_resnet_cov but a coordinate-frame DIAGONAL covariance head.
+            # Load a spectral base with --freeze_mean to build the diagonal arm of the matched pair.
+            network = SO3EquivariantReluBracketLayers_cov(
+                LN_BasicBlock1D_cov,
+                input_dim, output_dim,
+                [2, 2, 2, 2],
+                net_config["in_dim"],
+                cov_head='diag'
+            )
     elif arch == "ln_resnet_chol":
         # Equivariant Cholesky-style covariance head (A only; Sigma = A A^T + eps*I)
         network = SO3EquivariantReluBracketLayers_chol(

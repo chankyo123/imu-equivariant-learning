@@ -44,6 +44,13 @@ Reference model trained by us for the EqNIO O(2) comparison on TLIO (not a paper
    of Table 1, and all Fetch models of Table 3.
 5. The two original 0.273M GINIO-A models of Supplement Table 5 predate `VNLayerNorm` and do
    not load against the current `airio/model/vn_codenet.py`; they are not released.
+6. **Activation slope of the Lie-Neuron checkpoints.** The archive that shipped the four
+   Table-9 models also contained a variant architecture file with `VNLeakyReLU(negative_slope=0.1)`
+   (`src/network/ln_conv_2regress_nochannelmix_slope_1_bias.py`). The published Table-9 numbers were
+   computed with the `ln_resnet` registry entry, i.e. `ln_conv_2regress_nochannelmix_bias.py`
+   (`negative_slope=0.0`), and that is what `--arch ln_resnet` loads here. Both files accept the
+   checkpoints without missing keys; on two test sequences the velocity RMSE differs by about 1 %
+   (0.320 vs 0.325 m/s on B11_random_waypoints_rep1), so use the default.
 
 ## Loading
 

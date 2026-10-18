@@ -58,6 +58,22 @@ if __name__ == "__main__":
     parser.add_argument("--gyro_bias_range", type=float, default=0.05)  # 1e-3
 
     add_bool_arg(parser, "perturb_gravity", default=True)
+    # Training-time random SO(3) rotation of the IMU window and its vector targets (both
+    # world- and sensor-frame training). Off by default; the paper's released models were
+    # trained without rotation augmentation.
+    add_bool_arg(parser, "so3_train_aug", default=False)
+    parser.add_argument("--so3_train_aug_max_deg", type=float, default=180.0,
+                        help="Max magnitude of training-time random SO(3) rotation (deg).")
+    # Test-time perturbation (frame-estimation mismatch sweeps of Supp. Table 10 and the
+    # ID/SO(3) protocol). 'so3' rotates IMU channels AND vector targets by the same R, i.e.
+    # predictions are scored in the rotated frame, equivalent to un-rotating them.
+    parser.add_argument(
+        "--test_perturb_type", type=str, default="none",
+        choices=["none", "gravity", "lfa", "so3"],
+        help="'gravity': fixed horizontal-axis tilt of D deg; 'lfa': time-varying relative-"
+             "rotation noise with peak D deg; 'so3': fixed random SO(3) rotation of D deg per window.")
+    parser.add_argument("--test_perturb_deg", type=float, default=0.0)
+    parser.add_argument("--test_perturb_seed", type=int, default=0)
     parser.add_argument(
         "--perturb_gravity_theta_range", type=float, default=5.0
     )  # degrees
@@ -89,6 +105,9 @@ if __name__ == "__main__":
 
     # ===================== reproducibility =====================
     parser.add_argument("--seed", type=int, default=42)
+    # Load --model_path, freeze backbone + mean head, train ONLY the covariance head
+    # (diagonal-vs-spectral matched-pair study: identical mean in both arms).
+    add_bool_arg(parser, "freeze_mean", default=False)
     parser.add_argument("--weight_decay", type=float, default=5e-4)
     parser.add_argument("--grad_clip", type=float, default=0.1)
 

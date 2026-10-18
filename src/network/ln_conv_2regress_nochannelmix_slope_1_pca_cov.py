@@ -351,8 +351,9 @@ class SO3EquivariantReluBracketLayers_cov(nn.Module):
                 block_type,
                 in_dim, out_dim, 
                 group_sizes,
-                inter_dim, zero_init_residual=True):
+                inter_dim, zero_init_residual=True, cov_head='spectral'):
         super(SO3EquivariantReluBracketLayers_cov, self).__init__()
+        self.cov_head = cov_head   # 'spectral' (default) or 'diag' (frozen-mean baseline head)
         feat_dim = 1024
         share_nonlinearity = False
         leaky_relu = True
@@ -380,6 +381,9 @@ class SO3EquivariantReluBracketLayers_cov(nn.Module):
         self.output_block5 = FcBlock(512//3*3, out_dim, 7)
         self.output_block6 = FcBlock(512//3*3, out_dim, 7)
         self.output_block7 = FcBlock(512//3*3, out_dim, 7)
+        # Coordinate-frame diagonal log-std head (frozen-mean diag-vs-spectral matched pair).
+        # Unused unless cov_head=='diag'; kept in state_dict so a spectral base loads (strict=False).
+        self.output_block_diag = FcBlock(512//3*3, out_dim, 7)
         
         # self.inv_head1 = nn.Sequential(
         #     nn.Linear(1, 32), nn.ReLU(),
@@ -563,6 +567,11 @@ class SO3EquivariantReluBracketLayers_cov(nn.Module):
         # print(x.shape)  #[1024, 170, 3, 7]
 
         mean = self.output_block1(x)  #B,3
+        if getattr(self, 'cov_head', 'spectral') == 'diag':
+            # frozen-mean diagonal baseline: coordinate-frame log-std, NO orientation V
+            diag_logstd = self.output_block_diag(x)   # (B,3)
+            return mean, diag_logstd
+
         
         # covariance = self.output_block2(x)  #B,3
         

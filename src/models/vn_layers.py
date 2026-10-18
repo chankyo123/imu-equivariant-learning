@@ -163,7 +163,7 @@ class VNMeanPool(nn.Module):
         if isinstance(W, torch.Tensor):
             W = W.item()
         reduced_W = (W + 1)//2 if self.kernel == 2 and W % 2 == 1 else W //self.kernel
-        output = torch.zeros(B,C,N,reduced_W).to('cuda')
+        output = torch.zeros(B,C,N,reduced_W, device=x.device, dtype=x.dtype)
 
         for i in range(reduced_W):
             local_region = x[:, :, :, i * self.kernel : (i+1) * self.kernel]
@@ -192,7 +192,7 @@ class VNMeanPool_local(nn.Module):
             if isinstance(W, torch.Tensor):
                 W = W.item()
             reduced_W = (W + 1)//2 if self.kernel == 2 and W % 2 == 1 else W //self.kernel
-            output = torch.zeros(B,C,N,reduced_W).to('cuda')
+            output = torch.zeros(B,C,N,reduced_W, device=x.device, dtype=x.dtype)
 
             for i in range(reduced_W):
                 local_region = x[:, :, :, i * self.kernel : (i+1) * self.kernel]
@@ -204,7 +204,7 @@ class VNMeanPool_local(nn.Module):
             if isinstance(W, torch.Tensor):
                 W = W.item()
             reduced_W = (W + 1)//2 if self.kernel == 2 and W % 2 == 1 else W //self.kernel
-            output = torch.zeros(B,N,reduced_W).to('cuda')
+            output = torch.zeros(B,N,reduced_W, device=x.device, dtype=x.dtype)
             
             for i in range(reduced_W):
                 local_region = x[:, :, i * self.kernel : (i+1) * self.kernel]
@@ -224,14 +224,14 @@ def local_mean_pool(x, kernel=2):
         else:
             reduced_W = W // kernel
             
-        output = torch.zeros(B,C,N,reduced_W).to('cuda')
+        output = torch.zeros(B,C,N,reduced_W, device=x.device, dtype=x.dtype)
         
         for i in range(reduced_W):
             local_region = x[:,:,:,i*kernel:(i+1)*kernel]
             local_average = local_region.mean(dim=3, keepdim=False)
             output[:,:,:,i] = local_average
         
-        return output.to('cuda')
+        return output
     else:
         B,N,W = x.shape
         if isinstance(W, torch.Tensor):
@@ -242,14 +242,14 @@ def local_mean_pool(x, kernel=2):
         else:
             reduced_W = W // kernel
             
-        output = torch.zeros(B,N,reduced_W).to('cuda')
+        output = torch.zeros(B,N,reduced_W, device=x.device, dtype=x.dtype)
         
         for i in range(reduced_W):
             local_region = x[:,:,i*kernel:(i+1)*kernel]
             local_average = local_region.mean(dim=2, keepdim=False)
             output[:,:,i] = local_average
         
-        return output.to('cuda')
+        return output
 
 
 class VNStdFeature(nn.Module):

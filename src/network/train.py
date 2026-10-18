@@ -114,13 +114,20 @@ def get_inference(network, data_loader, device, epoch,
 def do_train(network, train_loader, device, epoch, optimizer, input_dim,
              transforms=[], body_frame_3regress=False, body_frame=False,
              cov_type='diag', mse_warmup_epochs=10, mse_anchor_weight=0.1,
-             nll_weight=1.0, grad_clip=0.1):
+             nll_weight=1.0, grad_clip=0.1, freeze_cov_keys=None):
     """
     Train network for one epoch using a specified data loader.
     """
     train_targets, train_preds, train_preds_cov, train_losses = [], [], [], []
     train_targets_vel, train_preds_vel = [], []
     network.train()
+    if freeze_cov_keys is not None:
+        # Keep frozen mean/backbone in EVAL (running BN stats, no dropout) so the mean is
+        # byte-identical across the diagonal and spectral arms; only the cov head trains.
+        network.eval()
+        for _nm, _m in network.named_modules():
+            if _nm.startswith(freeze_cov_keys):
+                _m.train()
 
     for bid, sample in enumerate(train_loader):
         sample = to_device(sample, device)
@@ -383,6 +390,8 @@ def net_train(args):
         },
         "perturb_gravity": bool(args.perturb_gravity),
         "perturb_gravity_theta_range": float(args.perturb_gravity_theta_range),
+        "so3_train_aug": bool(getattr(args, "so3_train_aug", False)),
+        "so3_train_aug_max_deg": float(getattr(args, "so3_train_aug_max_deg", 180.0)),
     }
 
     data = TlioData(
@@ -463,9 +472,44 @@ def net_train(args):
     total_params = network.get_num_params()
     logging.info(f'Network "{args.arch}" loaded to device {device}')
     logging.info(f"Total number of parameters: {total_params}")
+    # ---- resolve cov_type once (needed for freeze_mean head selection) ----
+    if getattr(args, "cov_type", "auto") != "auto":
+        _cov_type0 = args.cov_type
+    else:
+        _al = (args.arch or "").lower()
+        _cov_type0 = 'eq_chol' if _al == 'ln_resnet_chol' else ('eq_spec' if _al == 'ln_resnet_cov' else 'diag')
+
+    # ---- freeze_mean: load a base checkpoint, freeze backbone+mean, train ONLY the cov head ----
+    freeze_cov_keys = None
+    if getattr(args, "freeze_mean", False):
+        if args.model_path is not None and osp.exists(args.model_path):
+            base = torch.load(args.model_path, map_location=device)
+            sd = base.get("model_state_dict", base)
+            missing, unexpected = network.load_state_dict(sd, strict=False)
+            logging.info(f"[freeze_mean] loaded base mean from {args.model_path}: "
+                         f"{len(missing)} missing / {len(unexpected)} unexpected keys")
+        else:
+            logging.warning("[freeze_mean] no valid --model_path base; freezing a randomly-init mean!")
+        COVKEYS = {
+            'eq_spec': ('output_block2', 'output_block3', 'output_block4',
+                        'output_block5', 'output_block6', 'output_block7', 'inv_head_shared'),
+            'diag':    ('output_block_diag',),
+            'eq_chol': ('output_block_a1', 'output_block_a2', 'output_block_a3', 'log_a_scale'),
+        }[_cov_type0]
+        freeze_cov_keys = COVKEYS
+        n_tr = n_fr = 0
+        for name, p in network.named_parameters():
+            keep = name.startswith(COVKEYS)
+            p.requires_grad = keep
+            n_tr += p.numel() if keep else 0
+            n_fr += 0 if keep else p.numel()
+        logging.info(f"[freeze_mean] cov_type={_cov_type0}: trainable(cov head)={n_tr}  "
+                     f"frozen(mean+backbone)={n_fr}")
+
 
     # optimizer = torch.optim.Adam(network.parameters(), args.lr)
-    optimizer = torch.optim.AdamW(network.parameters(), lr=args.lr,
+    _trainable = [p for p in network.parameters() if p.requires_grad]
+    optimizer = torch.optim.AdamW(_trainable, lr=args.lr,
                               weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, factor=0.2, patience=10, eps=1e-12
@@ -544,7 +588,8 @@ def net_train(args):
                             mse_warmup_epochs=args.mse_warmup_epochs,
                             mse_anchor_weight=args.mse_anchor_weight,
                             nll_weight=args.nll_weight,
-                            grad_clip=args.grad_clip)
+                            grad_clip=args.grad_clip,
+                            freeze_cov_keys=freeze_cov_keys)
         mem_used_max_GB = torch.cuda.max_memory_allocated() / (1024*1024*1024)
         torch.cuda.reset_peak_memory_stats()
         mem_str = f'GPU Mem: {mem_used_max_GB:.3f}GB'

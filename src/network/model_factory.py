@@ -18,6 +18,10 @@
 from network.ln_4res_peract import LN_PreActBracketBlock1D, SO3EquivariantReluBracketLayers_peract    #6D or 9D
 # from network.ln_conv_4regress_nochannelmix_bias_dp import LN_BasicBlock1D, SO3EquivariantReluBracketLayers    #6D or 9D
 from network.ln_conv_2regress_nochannelmix_bias import LN_BasicBlock1D, SO3EquivariantReluBracketLayers    #6D or 9D
+from network.ln_conv_2regress_nochannelmix_slope_1 import (
+    LN_BasicBlock1D as LN_BasicBlock1D_slope1_nobias,
+    SO3EquivariantReluBracketLayers as SO3EquivariantReluBracketLayers_slope1_nobias,
+)  # slope-0.1 backbone with bias-free FcBlocks: the architecture of the released RIDI GINIO-W checkpoint
 # from network.ln_conv_2regress_nochannelmix_slope_1 import LN_BasicBlock1D, SO3EquivariantReluBracketLayers    #6D or 9D
 # from network.ln_conv_2regress_nochannelmix_slope_1_bias import LN_BasicBlock1D, SO3EquivariantReluBracketLayers    #6D or 9D
 from network.ln_conv_2regress_nochannelmix_slope_1_pca_cov import (
@@ -76,6 +80,16 @@ def get_model(arch, net_config, input_dim=6, output_dim=3):
     elif arch == "ln_resnet":
             network = SO3EquivariantReluBracketLayers(
                 LN_BasicBlock1D,
+                input_dim, output_dim, 
+                [2, 2, 2, 2],
+                net_config["in_dim"]
+            )
+    elif arch == "ln_resnet_slope1_nobias":
+            # ln_resnet with VNLeakyReLU slope 0.1 and bias-free FcBlocks (ln_conv_2regress_nochannelmix_slope_1.py).
+            # The released RIDI GINIO-W checkpoint (models_ridi/world_ln_2regress_slope1) strict-loads ONLY into this
+            # variant; the TLIO / NanoBench ln_resnet checkpoints use "ln_resnet" (slope 0.0, biased FcBlocks).
+            network = SO3EquivariantReluBracketLayers_slope1_nobias(
+                LN_BasicBlock1D_slope1_nobias,
                 input_dim, output_dim, 
                 [2, 2, 2, 2],
                 net_config["in_dim"]

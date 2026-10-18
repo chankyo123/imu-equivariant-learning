@@ -16,6 +16,7 @@ Architectures (`--arch`, `src/network/model_factory.py`):
 | `ln_resnet_cov_diag` | same backbone, coordinate-frame diagonal head | diagonal | the matched diagonal arm (`--freeze_mean`) |
 | `ln_resnet_chol` | `SO3EquivariantReluBracketLayers_chol` | `A Aᵀ + εI` (Cholesky-parametrised spectral) | GINIO-RS |
 | `resnet` | `ResNet1D` (TLIO) | diagonal | ResNet / ResNet1D baselines |
+| `ln_resnet_slope1_nobias` | `ln_conv_2regress_nochannelmix_slope_1.py` (LeakyReLU slope 0.1, **bias-free** FcBlocks) | diagonal log-std | the released **RIDI GINIO-W** checkpoint only; it does not load into `ln_resnet` |
 | `imunet` | `IMUNet` reimplementation (`model_imunet.py`) | diagonal | IMUNet baseline (RIDI) |
 | `ln189_speccov_s0`, `ln189_speccov_s0_diag` | `ln_resnet` backbone + spectral / coordinate-diagonal covariance head (`..._bias_speccov_slope0.py`) | spectral / diagonal | Fig. 5(b) frozen-mean covariance arms on TLIO (load the GINIO-W checkpoint with `--freeze_mean`) |
 | `ln189_speccov`, `ln189_speccov_diag` | same heads on a slope-0.1 backbone | — | superseded arms kept only to reproduce old runs; the deployed backbone is slope 0.0 |

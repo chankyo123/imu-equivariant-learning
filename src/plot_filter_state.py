@@ -157,7 +157,7 @@ def plot_error_euclidean(
 # get RPE
 def compute_rpe(rpe_ns, ps, ps_gt, yaw, yaw_gt):
     ns = ps_gt.shape[0]
-    assert ns - rpe_ns > 100
+    # assert ns - rpe_ns > 100
     assert ps.shape == ps_gt.shape
     assert yaw.shape == yaw_gt.shape
 
@@ -312,7 +312,7 @@ def run(args, dataset):
             vio_euls = vio_r.as_euler("xyz", degrees=True)
             
             vio_calib_ts = vio_ts
-            if "sim" not in args.root_dir:
+            if "sim" not in args.root_dir and "ridi" not in args.root_dir:
                 with open(osp.join(args.root_dir, dataset, "calibration.json"), 'r') as f:
                     calib_json = json.load(f)
                     
@@ -327,8 +327,8 @@ def run(args, dataset):
             else:
                 accelBias = 0
                 gyroBias = 0
-                accelScaleInv = None
-                gyroScaleInv = None
+                accelScaleInv = np.eye(3)[None,:,:]
+                gyroScaleInv = np.eye(3)[None,:,:]
 
             vio_pj_idx = np.searchsorted(vio_ts, ts) - 1
             vio_pi_idx = np.searchsorted(vio_ts, ts - args.displacement_time) - 1
@@ -366,7 +366,7 @@ def run(args, dataset):
             vio_p = interp1d(vio_ts, vio_p, axis=0)(ts)
             vio_v = interp1d(vio_ts, vio_v, axis=0)(ts)
 
-            if "sim" not in args.root_dir:
+            if "sim" not in args.root_dir and "ridi" not in args.root_dir:
                 accelScaleInv_flat = accelScaleInv.reshape((1, 9))
                 gyroScaleInv_flat = gyroScaleInv.reshape((1, 9))
                 accelScaleInv_flat = np.tile(accelScaleInv_flat, [ts.shape[0], 1])
@@ -386,7 +386,7 @@ def run(args, dataset):
             # This compute bias in non scaled sensor frame (I think)
             ba_temp = np.expand_dims(ba, axis=-1)
             bg_temp = np.expand_dims(bg, axis=-1)
-            if "sim" not in args.root_dir:
+            if "sim" not in args.root_dir and "ridi" not in args.root_dir:
                 ba_b = np.squeeze(
                     np.matmul(np.linalg.inv(accelScaleInv), ba_temp)
                 )

@@ -198,13 +198,13 @@ class TlioData:
                     **self.augmentation_options["bias_shift_options"])
             )
 
-        if self.augmentation_options["perturb_gravity"]:
-            transforms.append(
-                TransformPerturbGravity(self.data_window_config["input_sensors"], 
-                    self.augmentation_options["perturb_gravity_theta_range"])
-            )
+        # if self.augmentation_options["perturb_gravity"]:
+        #     transforms.append(
+        #         TransformPerturbGravity(self.data_window_config["input_sensors"], 
+        #             self.augmentation_options["perturb_gravity_theta_range"])
+        #     )
 
-        transforms.append(TransformInYawPlane(self.data_window_config["input_sensors"]))
+        # transforms.append(TransformInYawPlane(self.data_window_config["input_sensors"]))
         return transforms
 
     def get_train_transforms_bodyframe(self):
@@ -216,11 +216,11 @@ class TlioData:
                     **self.augmentation_options["bias_shift_options"])
             )
             
-        if self.augmentation_options["perturb_gravity"]:
-            transforms.append(
-                TransformPerturbGravity(self.data_window_config["input_sensors"], 
-                    self.augmentation_options["perturb_gravity_theta_range"])
-            )
+        # if self.augmentation_options["perturb_gravity"]:
+        #     transforms.append(
+        #         TransformPerturbGravity(self.data_window_config["input_sensors"], 
+        #             self.augmentation_options["perturb_gravity_theta_range"])
+        #     )
 
         return transforms
     

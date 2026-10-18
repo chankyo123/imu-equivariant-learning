@@ -18,7 +18,7 @@ from scipy.spatial.transform import Rotation
 from utils.logging import get_logger
 from .sequences_dataset import SequencesDataset
 from .constants import *
-from .data_transform import TransformAddNoiseBias, TransformPerturbGravity, TransformInYawPlane
+from .data_transform import TransformAddNoiseBias, TransformPerturbGravity, TransformInYawPlane, TransformLFARelativeRotationNoise
 
 log = get_logger(__name__)
 
@@ -54,6 +54,16 @@ class MemMappedSequencesDataset(Dataset, SequencesDataset):
             },
             "perturb_gravity": True,
             "perturb_gravity_theta_range": 5.0,
+            # "do_lfa_relative_rot_noise": True,
+            "do_lfa_relative_rot_noise": False,
+            "lfa_relative_rot_noise_options": {
+                "max_deg": 3,
+                # "max_deg": 5,
+                # "max_deg": 10,
+                # "max_deg": 15,
+                # "max_deg": 20,
+                "mode": "smooth",   # "smooth" or "ramp"
+            },
         },
     ):
         self.augmentation_options = augmentation_options
@@ -337,10 +347,20 @@ class MemMappedSequencesDataset(Dataset, SequencesDataset):
     def get_test_transforms_bodyframe(self):
         transforms = []
         print('transformation for bodyframe_training - TEST!')
-        if self.augmentation_options["do_bias_shift"]:
+        # if self.augmentation_options.get("do_bias_shift", False):
+        #     transforms.append(
+        #         TransformAddNoiseBias(
+        #             self.genparams["input_sensors"],
+        #             **self.augmentation_options["bias_shift_options"]
+        #         )
+        #     )
+
+        if self.augmentation_options.get("do_lfa_relative_rot_noise", False):
             transforms.append(
-                TransformAddNoiseBias(self.genparams["input_sensors"],
-                    **self.augmentation_options["bias_shift_options"])
+                TransformLFARelativeRotationNoise(
+                    self.genparams["input_sensors"],
+                    **self.augmentation_options["lfa_relative_rot_noise_options"]
+                )
             )
         return transforms
     

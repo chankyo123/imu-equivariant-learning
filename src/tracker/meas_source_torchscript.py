@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from network.covariance_parametrization import DiagonalParam
+from network.covariance_parametrization import DiagonalParam, EquivCovariance
 from utils.logging import logging
 
 
@@ -52,6 +52,8 @@ class MeasSourceTorchScript:
                 #     a, meas_cov, meas = outputs
                 else:
                     meas, meas_cov = outputs
+                    # meas, meas_V, meas_cov = outputs
+                    meas_cov = meas_cov.reshape(1, -1)
             elif type(outputs) == dict:  # New output format
                 meas, meas_cov = outputs["pred"], outputs["pred_log_std"]
                 # If this is the case, the network predicts over the whole window at high frequency.
@@ -64,8 +66,21 @@ class MeasSourceTorchScript:
             assert meas_cov.dim() == 2
 
             meas = meas.cpu().detach().numpy()
+            
             meas_cov[meas_cov < -4] = -4  # exp(-3) =~ 0.05
             meas_cov = DiagonalParam.vec2Cov(meas_cov).cpu().detach().numpy()[0, :, :]
+            # meas_cov_tensor = EquivCovariance.vec2Cov(meas_V, meas_cov)
+            # meas_cov = meas_cov_tensor.squeeze(0).cpu().detach().numpy()
+            # v = meas_cov  # shape: [B, 3]
+            # alpha, beta = 0.5, 1.0 
+
+            # vvT = torch.einsum('bi,bj->bij', v, v)  # [B, 3, 3]
+            # norm_v_sq = torch.sum(v ** 2, dim=1, keepdim=True)  # [B, 1]
+            # I = torch.eye(v.size(1), device=v.device).unsqueeze(0).expand(v.size(0), -1, -1)  # [B, 3, 3]
+
+            # meas_cov = alpha * vvT + beta * (norm_v_sq.unsqueeze(-1) * I - vvT)  # [B, 3, 3]
+            # meas_cov = meas_cov.cpu().detach().numpy()[0]  # [3, 3] if B == 1
+            
             meas = meas.reshape((3, 1))
 
             # Our equivalent of zero position update (TODO need stronger prior to keep it still)

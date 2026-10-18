@@ -1,291 +1,211 @@
-# IMU Equivariant Learning: A yaw-Equivariant Network-Coupled Inertial Odometry
+# GINIO: A Geometric SO(3)-Equivariant Interface for Neural Inertial Odometry
 
-Created by Chankyo Kim, Tzu-Yuan Lin, Minghan Zhu, and <a href="https://curly.engin.umich.edu/people#h.7jd25w55csv" target="_blank">Maani Ghaffari</a>.
+[![Paper](https://img.shields.io/badge/CoRL%202026-OpenReview-b31b1b.svg)](https://openreview.net/forum?id=nl8iBTm3Mt)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+**Chankyo Kim, Minghan Zhu, Tzu-Yuan Lin, Avantika Rattan, Maani Ghaffari**
+University of Michigan, [CURLY Lab](https://curly.engin.umich.edu/)
+
+*Conference on Robot Learning (CoRL) 2026, Austin, TX.*
+Paper and reviews: https://openreview.net/forum?id=nl8iBTm3Mt
+
+> This repository supersedes `imu-equivariant-learning` (the yaw-equivariant network-coupled
+> inertial odometry code it grew out of). The old code is preserved in the git history.
 
 ## Overview
-We introduce a yaw-equivariannt Network-Coupled Inertial Odemetry with creating fully SO(3) equivariant neural networks from conventional neural networks. Through the equivariant network, we get better generalization of displacement estimation without considering distribution of IMU measurement data, any other augmentations in data and architecture. [paper in preparation]
 
-<!-- <img src='images/1dconv-total.png' width=300> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <img src='images/equivariant system.png' width=350> -->
+Neural inertial odometry (NIO) uses a network as a learned measurement inside a filter. GINIO is an
+SO(3)-equivariant *interface* for that measurement: given a calibrated IMU window, it predicts a
+motion measurement whose **mean transforms as a vector** and whose **covariance transforms
+congruently as a second-order tensor** under any rotation of the IMU measurement frame. The same
+interface is instantiated on several backbones:
 
-<img src='images/1dconv-total.png' width=800>
-<img src='images/equivariant system.png' width=800>
+| Suffix | Benchmark | What it is | Code |
+|---|---|---|---|
+| GINIO-W / GINIO-S | TLIO, RIDI (filter-connected) | world-frame / sensor-frame Lie-Neuron ResNet (`ln_resnet`) + SCEKF / InEKF | [`src/`](src/) |
+| GINIO-RD / GINIO-RS | NanoBench | `ln_resnet` with a diagonal / spectral covariance head | [`src/`](src/) |
+| GINIO-R | Fetch remounting | `ln_resnet` | [`src/`](src/) |
+| GINIO-A | NanoBench | Vector-Neuron version of the AirIO recurrent model (VN-CNN + VN-GRU) | [`airio/`](airio/) |
+| GINIO-E | NanoBench | full-SO(3) canonicalised EqNIO-style model | [`eqnio/`](eqnio/) |
+
+**Last-Frame Alignment (LFA)** is a deterministic preprocessing step that expresses a window in the
+frame of its last IMU sample; for an SO(3)-equivariant predictor it is provably equivalent to
+world-frame training (Appendix D of the paper). It is implemented in
+[`src/dataloader/sequences_dataset.py`](src/dataloader/sequences_dataset.py) and switched by the
+dataset path (`bodyframe` in the path selects the sensor-frame branch; `nolfa` turns LFA off).
 
 ## Installation
-All dependencies can be installed using conda via
-```shell script
-conda env create -f environment.yaml
-```
-Then the virtual environment is accessible with:
-```shell script
-conda activate iql
-```
 
-Next commands should be run from this environment.
-
-## Dataset
-A dataset is needed in numpy format to run with this code. 
-We have released the dataset used in the paper.
-The data can be downloaded [here](https://drive.google.com/file/d/10Bc6R-s0ZLy9OEK_1mfpmtDg3jIu8X6g/view?usp=share_link) or with the following command (with the conda env activated) at the root of the repo:
-```shell script
-gdown 14YKW7PsozjHo_EdxivKvumsQB7JMw1eg
-mkdir -p local_data/ # or ln -s /path/to/data_drive/ local_data/
-unzip golden-new-format-cc-by-nc-with-imus-v1.5.zip -d local_data/
-rm golden-new-format-cc-by-nc-with-imus-v1.5.zip
-```
-https://drive.google.com/file/d/14YKW7PsozjHo_EdxivKvumsQB7JMw1eg/view?usp=share_link
-The dataset tree structure looks like this.
-Assume for the examples we have extracted the data under root directory `local_data/tlio_golden`:
-```
-local_data/tlio_golden
-├── 1008221029329889
-│   ├── calibration.json
-│   ├── imu0_resampled_description.json
-│   ├── imu0_resampled.npy
-│   └── imu_samples_0.csv
-├── 1014753008676428
-│   ├── calibration.json
-│   ├── imu0_resampled_description.json
-│   ├── imu0_resampled.npy
-│   └── imu_samples_0.csv
-...
-├── test_list.txt
-├── train_list.txt
-└── val_list.txt
+```bash
+conda env create -f environment.yml      # python 3.12 + pip requirements
+conda activate ginio
+# install the torch build matching your CUDA driver, e.g.
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 ```
 
-`imu0_resampled.npy` contains calibrated IMU data and processed VIO ground truth data.
-`imu0_resampled_description.json` describes what the different columns in the data are.
-The test sequences contain `imu_samples_0.csv` which is the raw IMU data for running the filter. 
-`calibration.json` contains the offline calibration. 
-Attitude filter data is not included with the release.
+The released checkpoints were trained and evaluated with torch 2.12 (nightly, cu128), numpy 1.26,
+scipy 1.17, pypose 0.9.5 and pyhocon 0.3.63; see [`requirements.txt`](requirements.txt).
 
-## Network training and evaluation
+## Data
 
-### For training or evaluation of one model
+All loaders expect the TLIO layout: one folder per sequence with `imu0_resampled.npy` (17 columns:
+`ts_us | gyr(3) | acc(3) | q_xyzw_World_Device(4) | pos_World(3) | vel(3)`),
+`imu0_resampled_description.json`, `calibration.json`, plus `train_list.txt / val_list.txt /
+test_list.txt` at the dataset root. Put datasets under `local_data/` (git-ignored).
 
-There are three different modes for the network part.`--mode` parameter defines the behaviour of `main_net.py`. Select between `train`, `test` \
-`train`: training a network model with training and validation dataset. \
-`test`: running an existing network model on testing dataset to obtain concatenated trajectories and metrics. \
+| Dataset | Source | Notes |
+|---|---|---|
+| TLIO golden | [CathIAS/TLIO](https://github.com/CathIAS/TLIO) release (`golden-new-format-cc-by-nc-with-imus-v1.5.zip`) | 284 / 36 / 36 sequences, world-frame IMU. `gdown 14YKW7PsozjHo_EdxivKvumsQB7JMw1eg && unzip ... -d local_data/` |
+| RIDI | [RIDI data_publish_v2](https://github.com/higerra/ridi_imu) | Convert to the TLIO layout before use (converter not yet included, see *Status*). |
+| NanoBench | [NanoBench](https://arxiv.org/abs/2603.09908) (Crazyflie 2.1 flights, Vicon ground truth) | Our processed world-frame split (74 / 16 / 17 sequences, 100 Hz, gravity removed) will be published with the checkpoints. Then derive the sensor-frame copy: `python scripts/derive_body_npy.py` and `ln -s nanobench_bodyframe_2nd_version local_data/nanobench_bodyframe_nolfa_2nd_version` (same data; the `nolfa` name disables LFA). |
+| Fetch remounting | collected by us (Adafruit BNO055 in a Fetch mobile base; 23 nominal + 23 x-remount + 23 y-remount sequences) | Shipped as `fetch_dataset.zip` with the paper supplement; will be mirrored here. |
 
-#### 1. Training:
+## Quick start
 
-**Parameters:** 
+### Lie-Neuron models (GINIO-W/S/RD/RS/R) — `src/`
 
-`--root_dir`: dataset root directory. Each subfolder of root directory is a dataset. \
-`--out_dir`: training output directory, where `checkpoints` and `logs` folders will be created to store trained models and tensorboard logs respectively. A `parameters.json` file will also be saved.
+Train the NanoBench GINIO-RD configuration (sensor frame, no LFA, diagonal head; this is the
+hyper-parameter set found by the Optuna sweep in the paper):
 
-**Example:** 
-```shell script
-python3 src/main_net.py \
---mode train \
---root_dir local_data/tlio_golden \
---out_dir models/resnet \
---epochs 100
+```bash
+python src/main_net.py --mode train \
+  --root_dir local_data/nanobench_bodyframe_nolfa_2nd_version --out_dir models/ginio_rd \
+  --arch ln_resnet --body_frame True --epochs 201 --batch_size 512 --lr 4.1e-4 --weight_decay 5.8e-3 \
+  --imu_freq 200 --imu_base_freq 1000 --window_time 0.675 --sample_freq 10 \
+  --input_dim 6 --output_dim 3 --seed 1 --workers 4 --dataset_style mmap \
+  --rpe_window 2.0 --mse_warmup_epochs 12 --nll_weight 1.0
 ```
 
-**Note:** We offer multiple types of dataloaders to help speed up training.
-The `--dataset_style` arg can be `ram`, `mmap`, or `iter`. 
-`ram` stores all the sequences in RAM, `mmap` uses memmapping to only keep part of the 
-sequences in RAM at once, and `iter` is an iterable-style dataloader for larger datasets,
-which sacrifices true randomness. 
-The default is `mmap`, which offers the best tradeoff, and typically works for 
-the dataset provided.
-However, we found that on server-style machines, the memmapping can cause RAM to fill up
-for some reason (it seems to work best on personal desktops).
-If the training is getting killed by your OS or taking up too much RAM,
-you may try setting `--workers` to 1, `--dataset_style` to `ram`, and/or `--no-persistent_workers`.
+Spectral (GINIO-RS) and world-frame (GINIO-W) variants:
 
-```shell script
-tensorboard --logdir models/resnet/logs/
+```bash
+# spectral covariance head, LFA on (path without "nolfa"), 1.0 s window (the spectral head is wired for window_time 1.0)
+python src/main_net.py --mode train --root_dir local_data/nanobench_bodyframe_2nd_version --out_dir models/ginio_rs \
+  --arch ln_resnet_chol --cov_type eq_chol --body_frame True --window_time 1.0 --sample_freq 20 --imu_freq 200 --imu_base_freq 1000 \
+  --batch_size 16 --epochs 201 --lr 4.1e-4 --weight_decay 5.8e-3 --init_log_a_scale -1.897
+# world-frame TLIO (GINIO-W)
+python src/main_net.py --mode train --root_dir local_data/tlio_golden --out_dir models/ginio_w \
+  --arch ln_resnet --body_frame False --window_time 1.0 --sample_freq 20 --imu_freq 200 --imu_base_freq 1000 --batch_size 1024 --epochs 120
 ```
 
-#### 2. Testing:
+Test (writes per-sequence `trajectory.txt`, `net_outputs.txt` and `metrics.json`; `ate_um` is the
+Umeyama-aligned ATE used in Table 2, `ate` the TLIO-style mean position error):
 
-**Parameters:** 
-
-`--model_path`: path of the trained model to test with. \
-`--out_dir`: testing output directory, where a folder for each dataset tested will be created containing estimated trajectory as `trajectory.txt` and plots if specified. `metrics.json` contains the statistics for each dataset. 
-
-**Example:**
-```shell script
-python3 src/main_net.py \
---mode test \
---root_dir local_data/tlio_golden \
---model_path models/resnet/checkpoint_*.pt \
---out_dir test_outputs
+```bash
+python src/main_net.py --mode test --root_dir local_data/nanobench_bodyframe_nolfa_2nd_version \
+  --out_dir test_outputs/ginio_rd --model_path models/ginio_rd/checkpoint_best.pt --arch ln_resnet --body_frame True \
+  --batch_size 1024 --imu_freq 200 --imu_base_freq 1000 --window_time 0.675 --sample_freq 10
 ```
 
+Filter-connected evaluation (TLIO/RIDI, Table 1): export TorchScript, run the tracker, then compute
+metrics. `--use_riekf True --body_frame True` selects the InEKF sensor-frame configuration (GINIO-S).
 
-**Warning:** network testing use the ground truth orientations for displacement integration. 
-Please do not consider them as benchmarks, they are more like a debugging tool.
-
-### For batch testing on multiple models
-
-Batch scripts are under src/batch_analysis module. Execute batch scripts from the src folder.
-
-Batch testing tests a list of datasets using multiple models and for each model save the trajectories, plots and metrics into a separate model folder. Output tree structure looks like this:
-```
-batch_test_outputs
-├── model1
-│   ├── seq1
-│   │   ├── trajectory.txt
-│   │   └── *.png
-│   ├── seq2
-...
-│   └── metrics.json
-├── model2
-│   ├── seq1
-...
-│   └── metrics.json
-...
+```bash
+python src/convert_model_to_torchscript.py --model_path models/ginio_w/checkpoint_best.pt \
+  --model_param_path models/ginio_w/parameters.json --out_dir models/ginio_w --input_dim 6
+python src/main_filter.py --root_dir local_data/tlio_golden/ --model_path models/ginio_w/model_torchscript.pt \
+  --model_param_path models/ginio_w/parameters.json --out_dir filter_outputs/ginio_w --update_freq 20 --erase_old_log
+python src/plot_filter_state.py --root_dir local_data/tlio_golden/ --log_dir filter_outputs/ginio_w --no-make_plots --no-save_fig
 ```
 
-Create an output directory and go to the src folder
-```shell script
-mkdir batch_test_outputs
-cd src
-```
-Run batch tests. `--model_globbing` is the globbing pattern to find all models to test. Here we only have one.
-```shell script
-python -m batch_runner.net_test_batch \
---root_dir ../local_data/tlio_golden \
---model_globbing "../models/*/checkpoint_best.pt" \
---out_dir ../batch_test_outputs \
---save_plot
-```
-If you saved plot, you can visualize there:
+Important flags: `--body_frame` is a string (`"True"`/`"False"`); always pass `--imu_freq 200`
+(the window length is `int(200 * window_time)` samples, so on 100 Hz NanoBench `--window_time 1.0`
+is a 2 s window); `--cov_type {diag, eq_spec, eq_chol}` is inferred from the architecture when omitted.
 
-```shell script
-feh ../	batch_test_outputs/models-resnet/*/view.png # example using the `feh` image visualizer, use your favorite one
-```
+### AirIO-style recurrent models (GINIO-A) — `airio/`
 
+Run from inside `airio/`. Configs are HOCON; dataset roots are relative (`../local_data/...`).
 
-### Running analysis and generating plots
-
-After running testing and evaluation in batches, the statistics are saved in either `metrics.json`. To visualize the results and compare between models, we provide scripts that display the results in an interactive shell through iPython. The scripts are under `src/analysis` module.
-
-To visualize network testing results from `metrics.json` including trajectory metrics and testing losses, go to `src` folder and run
-```shell script
-python -m analysis.display_json \
---glob_dataset "../batch_test_outputs/*/"
-```
-This will leave you in an interactive shell with a preloaded panda DataFrame `d`. You can use it to visualize all metrics with the following helper function:
-```shell script
-plot_all_stats_net(d)
+```bash
+cd airio && export WANDB_MODE=offline
+# GINIO-A (no attitude input), the 0.045M "small" model of Table 2
+python train_motion.py --config configs/Nanobench/motion_body_noatt_vn_small.conf --device cuda:0
+# GINIO-A with attitude channel; A2 ("rows of R_WS") attitude encoding + spectral covariance head
+python train_motion.py --config configs/Nanobench/motion_body_a2_spec_small.conf --device cuda:0 --seed 0
+# whole-sequence inference -> experiments/<exp>/<conf>/net_output.pickle
+python inference_motion.py --config configs/Nanobench/motion_body_noatt_vn_small.conf --device cuda:0
+# ID/ID and ID/SO(3): Umeyama ATE, mean-equivariance error and covariance-law error under
+# (P) a physical remount R_WS -> R_WS Q^T and (G) the "rotate every vector input" protocol
+python -m evaluation.eval_idso3 --config configs/Nanobench/motion_body_noatt_vn_small.conf --n_rot 3 --device cuda:0
+# unit test of the A2 + spectral construction (24 checks, CPU)
+CUDA_VISIBLE_DEVICES="" python -m model.test_a2_spectral_equivariance
 ```
 
-## Running EKF with network displacement estimates
+Attitude encodings live in [`airio/model/attitude.py`](airio/model/attitude.py): `logmap`
+(`Log(R_WS)`, the encoding used for the paper's with-attitude row), `rows` (the three rows of
+`R_WS`, exactly equivariant under a remount and lossless), `up`, `rel`. The spectral head is
+`VNSpectralCov` in [`airio/model/vn_codenet.py`](airio/model/vn_codenet.py).
 
-### Converting model to torchscript
-The EKF expects the model to be in torchscript format.
+### Canonicalised models (GINIO-E and the EqNIO O(2) baseline) — `eqnio/`
 
-**Example:**
-From the repo root:
-```shell script
-python3 src/convert_model_to_torchscript.py \
---model_path models/resnet/checkpoint_best.pt \
---model_param_path models/resnet/parameters.json \
---out_dir models/resnet/
-```
-which will create `models/resnet/model_torchscript.pt`.
-
-
-### Running EKF with one network model
- 
-Use `src/main_filter.py` for running the filter and parsing parameters. The program supports running multiple datasets on one specified network model.
-
-**Parameters:**
-
-`--model_path`: path to saved model checkpoint file. \
-`--model_param_path`: path to parameter json file for this model. \
-`--out_dir`: filter output directory. This will include a `parameters.json` file with filter parameters, and a folder for each dataset containing the logged states, default to `not_vio_state.txt`. \
-`--erase_old_log`: overwrite old log files. If set to `--no-erase_old_log`, the program would skip running on the datasets if the output file already exists in the output directory. \
-`--save_as_npy`: convert the output txt file to npy file and append file extension (e.g. `not_vio_state.txt.npy`) to save space. \
-`--initialize_with_offline_calib`: initialize with offline calibration of the IMU. If set to `--no-initialize_with_offline_calib` the initial IMU biases will be initialized to 0. \
-`--visualize`: if set, open up an Open3D window to visualize the filter running. This is of course optional.
-
-**Example:**
-```shell script
-python3 src/main_filter.py \
---root_dir local_data/tlio_golden \
---model_path models/resnet/model_torchscript.pt \
---model_param_path models/resnet/parameters.json \
---out_dir filter_outputs \
---erase_old_log \
---save_as_npy \
---initialize_with_offline_calib \
---dataset_number 22 \
---visualize
-```
-Please refer to `main_filter.py` for a full list of parameters.
-
-### Batch running filter on multiple models and parameters
-
-Batch script `batch_runner/filter_batch` provides functionality to run the main file in batch settings. Go to `src` folder to run the module and you can set the parameters to test within the script (e.g. different update frequencies).
-
-**Example:**
-```shell script
-cd src
-python -m batch_runner.filter_batch \
---root_dir ../local_data/tlio_golden \
---model_globbing "../models/*/model_torchscript.pt" \
---out_dir ../batch_filter_outputs
+```bash
+cd eqnio/TLIO-master
+# EqNIO O(2) baseline / GINIO-E (full SO(3)); add --so3_augment --so3_augment_max_deg 180 for SO(3) augmentation
+python src/main_net.py --mode train --arch eq_o2_frame_fullCov_2vec_2deep  --root_dir local_data/tlio_golden --out_dir models/eqnio_o2 \
+  --batch_size 1024 --epochs 40 --lr 1e-4 --window_time 1.0 --sample_freq 20 --imu_freq 200 --imu_base_freq 1000 --workers 4 --dataset_style mmap
+python src/main_net.py --mode train --arch eq_so3_frame_fullCov_2vec_2deep --root_dir local_data/tlio_golden --out_dir models/ginio_e --so3_augment --so3_augment_max_deg 180 \
+  --batch_size 1024 --epochs 40 --lr 1e-4 --window_time 1.0 --sample_freq 20 --imu_freq 200 --imu_base_freq 1000 --workers 4 --dataset_style mmap
+# filter chain
+python src/convert_model_to_torchscript_eq.py --model_path models/ginio_e/checkpoint_best.pt --model_param_path models/ginio_e/parameters.json --out_dir models/ginio_e --cpu
+python src/main_filter.py --root_dir local_data/tlio_golden/ --model_path models/ginio_e/model_torchscript.pt --model_param_path models/ginio_e/parameters.json --out_dir models/ginio_e/filter --update_freq 20.0 --erase_old_log --no-visualize
+python ../test_vn_eqnio_equivariance.py     # numerical SO(3) equivariance check of the GINIO-E model
 ```
 
-### Batch running metrics and plot generation
+## Model zoo
 
-To generate plots of the states of the filter and to generate `metrics.json` file for both the filter and network concatenation approaches, batch run `plot_state.py` on the existing filter and network testing outputs.
+See [`checkpoints/MANIFEST.md`](checkpoints/MANIFEST.md) for every released checkpoint with
+SHA-256, parameter count and the Table-2 value it reproduces. Released: the four AirIO-style
+NanoBench rows (AirIO ×2, GINIO-A ×2), GINIO-E, GINIO-RS, the four covariance-ablation models of
+Supplement Table 9, and the closest archived GINIO-RD run (Optuna trial 55). Not released because
+no checkpoint survives: ResNet1D 5.43M, the EqNIO O(2) NanoBench row (the EqNIO authors' public
+TLIO model evaluated on NanoBench), the TLIO/RIDI filter models of Table 1 and the Fetch models of
+Table 3 (see *Status*).
 
-**Parameters:**
+## Evaluation protocol notes
 
-`--runname_globbing`: globbing pattern for all the model names to plot. This pattern should match between filter and ronin and exist in both `--filter_dir` and `--ronin_dir`. \
-`--no_make_plots`: not to save plots. If removed plots will be saved in the filter output folders for each trajectory.
+* **Table 2 ATE** is the Umeyama-aligned (rotation + translation, no scale) position RMSE over the
+  17 NanoBench test sequences after integrating the predicted body velocity through ground-truth
+  attitude (`ate_um` in `src/network/test.py`, `ate_for` in `airio/evaluation/eval_idso3.py`).
+* **ID/SO(3)** rotates the accelerometer and gyroscope channels by a sampled `R`, rotates vector
+  targets by the same `R`, transforms covariance targets by `R Σ Rᵀ`, and un-rotates predictions
+  before scoring. `airio/evaluation/eval_idso3.py` implements this (and additionally reports the
+  mean-equivariance and covariance-congruence errors). The imu-equivariant-learning test transform
+  `--test_perturb_type so3` in older copies of this code does *not* un-rotate predictions and must
+  not be used for this protocol.
+* **Checkpoint selection** in `airio/train_motion.py` follows upstream AirIO: `best_model.ckpt` is
+  the epoch with the lowest loss on the config's `test` block, which in
+  `airio/configs/datasets/Nanobench/nanobench_body.conf` is the 17-sequence reported test split
+  (the `eval` block, 16 disjoint sequences, is logged only). This applies identically to the AirIO
+  baselines and the GINIO-A models.
+* **GINIO-E** in Table 2 was trained on TLIO with full-SO(3) augmentation and evaluated zero-shot on
+  NanoBench (no NanoBench training).
+* No rotation augmentation is used in any released training configuration; ID/SO(3) numbers measure
+  architectural equivariance. The Lie-Neuron family uses a per-window constant bias shift
+  (accel ±0.2 m/s², gyro ±0.05 rad/s) at training time; the AirIO family uses no augmentation.
 
-**Example:**
-```shell script
-python -m batch_runner.plot_batch \
---root_dir ../local_data/tlio_golden \
---runname_globbing "*" \
---filter_dir ../batch_filter_outputs_uf20 \
---ronin_dir ../batch_test_outputs
+## Status
+
+* [x] Code for all five instantiations, evaluation scripts, filter chains.
+* [x] NanoBench and covariance-ablation checkpoints (GitHub Release).
+* [ ] Processed NanoBench split (1.0 GB) and the Fetch remounting set (57 MB) as a data release.
+* [ ] RIDI → TLIO-layout converter and the TLIO/RIDI/Fetch model checkpoints (being recovered from
+      the original training machine).
+* [ ] AquaticVision evaluation code (Appendix K).
+
+## Citation
+
+```bibtex
+@inproceedings{kim2026ginio,
+  title     = {{GINIO}: A Geometric {SO(3)}-Equivariant Interface for Neural Inertial Odometry},
+  author    = {Kim, Chankyo and Zhu, Minghan and Lin, Tzu-Yuan and Rattan, Avantika and Ghaffari, Maani},
+  booktitle = {Proceedings of The 10th Conference on Robot Learning (CoRL)},
+  year      = {2026},
+  url       = {https://openreview.net/forum?id=nl8iBTm3Mt}
+}
 ```
 
-Up to now a `metrics.json` file will be added to each model folder, and the tree structure would look like this:
-```
-batch_filter_outputs
-├── model1
-│   ├── seq1
-│   │   ├── *.png
-│   │   ├── not_vio_state.txt.npy
-│   │   └── vio_states.npy
-│   ├── seq1
-│   │   ├── *.png
-│   │   ├── not_vio_state.txt.npy
-│   │   └── vio_states.npy
-...
-│   ├── metrics.json
-│   └── parameters.json
-├── model2
-...
-```
+## Acknowledgements
 
-Visualize the plot from the filter and ronin:
-```shell script
-feh ../batch_filter_outputs_uf20/models-resnet/*/position-2d.png # example using the `feh` image visualizer, use your favorite one
-```
-
-To generate plots from the metrics:
-```shell script
-python -m analysis.display_json \
---glob_dataset "../batch_filter_outputs_uf20/*/"
-
-# then run in the interactive session
-# plot_sysperf_cdf(d)
-```
-
-## Results
-
-Sample trajectories in IMU Equivariant Learning-Coupled State Estimator. Accurate trajectory estimation is achieved through yaw-equvariant network providing robustness in perturbation in yaw axis.
-
-<img src='images/position-2d (1).png' width=400> <img src='images/position-2d.png' width=400>
-<img src='images/table.png' width=1000>
+This code builds on [TLIO](https://github.com/CathIAS/TLIO), [EqNIO](https://github.com/RoyinaJayanth/EqNIO),
+[AirIO](https://github.com/Air-IO/Air-IO), [Vector Neurons](https://github.com/FlyingGiraffe/vnn) and
+[Lie Neurons](https://github.com/UMich-CURLY/LieNeurons). See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

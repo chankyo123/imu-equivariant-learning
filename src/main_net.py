@@ -6,7 +6,7 @@ Output: 3x1 displacement, 3x1 covariance parameters
 
 import network
 from utils.argparse_utils import add_bool_arg
-
+import numpy as np
 
 if __name__ == "__main__":
     import argparse
@@ -70,12 +70,51 @@ if __name__ == "__main__":
     # ----- for sampling in training / stepping in testing -----
     parser.add_argument("--sample_freq", type=float, default=20.0)  # hz
 
+    # ===================== loss / covariance options =====================
+    parser.add_argument(
+        "--cov_type", type=str, default="auto",
+        choices=["auto", "diag", "eq_spec", "eq_chol", "eq_chol_svd"],
+        help="Covariance head type. 'auto' picks from arch/out_dir name. "
+             "'eq_chol_svd' = SVD/polar-decomposed Sigma with non-degeneracy "
+             "regulariser (preferred over plain 'eq_chol')."
+    )
+    parser.add_argument("--mse_warmup_epochs", type=int, default=10,
+                        help="Epochs of pure MSE before NLL turns on.")
+    parser.add_argument("--mse_anchor_weight", type=float, default=0.1,
+                        help="MSE anchor weight added to NLL after warmup (P4 hybrid).")
+    parser.add_argument("--nll_weight", type=float, default=1.0,
+                        help="Weight on NLL term after warmup.")
+    parser.add_argument("--eq_chol_eps", type=float, default=1e-3,
+                        help="Sigma = A A^T + eps*I; small floor for SPD-ness.")
+
+    # ===================== reproducibility =====================
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--weight_decay", type=float, default=5e-4)
+    parser.add_argument("--grad_clip", type=float, default=0.1)
+
+    # ===================== data augmentation (지금은 dead link인 걸 살림) =====================
+    parser.add_argument("--accel_noise_std", type=float, default=0.0,
+                        help="Gaussian noise std added to accel during training.")
+    parser.add_argument("--gyro_noise_std", type=float, default=0.0,
+                        help="Gaussian noise std added to gyro during training.")
+    parser.add_argument("--bias_scale", type=float, default=1.0,
+                        help="Multiplier on (accel/gyro)_bias_range. <1.0 = weaker bias aug.")
+    parser.add_argument("--bias_curriculum_epochs", type=int, default=0,
+                        help="If >0, linearly ramp bias_scale from 0 to 1 over this many epochs.")
+    parser.add_argument("--init_log_a_scale", type=float, default=np.log(0.15),
+                    help="Initial value of log_a_scale parameter in Cholesky head.")
+
     # ----- plotting and evaluation -----
     add_bool_arg(parser, "save_plot", default=True)
     parser.add_argument("--rpe_window", type=float, default="2.0")  # s
 
     args = parser.parse_args()
 
+    import numpy as np, torch, random
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    random.seed(args.seed)
+    torch.cuda.manual_seed_all(args.seed)
     ###########################################################
     # Main
     ###########################################################

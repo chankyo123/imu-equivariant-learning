@@ -1,0 +1,10 @@
+liecasadi==0.0.7
+matplotlib==3.8.4
+numpy==2.2.5
+pyhocon==0.3.61
+pypose==0.6.8
+PyYAML==6.0.2
+scipy==1.15.3
+torch==2.6.0
+tqdm==4.66.5
+wandb==0.18.7

@@ -223,8 +223,8 @@ class ImuMSCKF:
         self.init_ba_sigma = getattr(config, "init_ba_sigma", 0.2)  # m/s^2
 
         # other tuning parameters
-        # self.meascov_scale = getattr(config, "meascov_scale", 1.0)
-        self.meascov_scale = getattr(config, "meascov_scale", 1.0) * 0.1
+        self.meascov_scale = getattr(config, "meascov_scale", 1.0)
+        # self.meascov_scale = getattr(config, "meascov_scale", 1.0) * 0.1
         self.mahalanobis_factor = 1
 
         # debug config

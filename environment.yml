@@ -1,0 +1,15 @@
+name: ginio
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  # PyTorch: install the build that matches your CUDA driver. The paper's final runs used
+  # torch 2.12 nightly (cu128) on Blackwell GPUs; any torch >= 2.4 with CUDA 12.x works on
+  # earlier GPUs. For CUDA 12.x on Ampere/Hopper:
+  #   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+  - pip
+  - pip:
+    - -r requirements.txt

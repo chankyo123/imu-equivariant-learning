@@ -177,6 +177,14 @@ class ImuTracker:
         net_acc, net_gyr, net_tus = self.imu_buffer.get_data_from_to(
             net_tus_begin, net_tus_end, self.update_freq
         )
+        
+        # --- [수정된 부분] ---
+        # 버퍼에서 빈 배열을 반환했는지 여기서 먼저 확인합니다.
+        # 만약 데이터가 부족하면, assert를 실행하기 전에 빈 배열을 그대로 반환합니다.
+        if net_gyr.size == 0:
+            return np.array([]), np.array([])
+        # --- [여기까지] ---
+        
         # print(net_tus[-10:])
         # print(net_gyr.shape, self.net_input_size, net_tus.shape)
         assert net_gyr.shape[0] == self.net_input_size
@@ -187,7 +195,7 @@ class ImuTracker:
         # print(net_tus_begin, net_tus[:3]) #og TLIO에서 net_tus_end - net_tus[-1] = 1000 딱 떨어짐, 그리고 5000씩 딱딱 맞춰 증가, 200hz 이아헹선 아예 같음
         # print("is running here?2")
         if self.body_frame:
-            if "last_align" in self.model_path:
+            if "last_align" in self.model_path or "lfa" in self.model_path:
                 
                 # ####1. use R from raw gyro data
                 Rs_bofbi = np.zeros((net_tus.shape[0], 3, 3))  # N x 3 x 3
@@ -233,6 +241,7 @@ class ImuTracker:
                 # assert False
                 
                 net_acc_w = np.einsum("tij,tj->ti", Rs_bofbi, net_acc)  # N x 3
+                net_gyr_w = np.einsum("tij,tj->ti", Rs_bofbi, net_gyr)  # N x 3
                 
             
         else:
@@ -472,7 +481,8 @@ class ImuTracker:
         
         if not self.use_riekf : 
             if "so3" in self.vio_path:
-                rotation_info = np.load("./../so3_local_data_bodyframe/rpy_values.npy")
+                # rotation_info = np.load("./../so3_local_data_bodyframe/rpy_values.npy")
+                rotation_info = np.load("./../../local_data_bodyframe/so3_60/rpy_values.npy")
                 rotation_rpy = rotation_info[i,:]
                 m_b2bprime = Rotation.from_euler('xyz', rotation_rpy, degrees=False).as_matrix()
             else:
@@ -486,7 +496,8 @@ class ImuTracker:
             
         else:
             if "so3" in self.vio_path:
-                rotation_info = np.load("./../so3_local_data_bodyframe/rpy_values.npy")
+                # rotation_info = np.load("./../so3_local_data_bodyframe/rpy_values.npy")
+                rotation_info = np.load("./../../local_data_bodyframe/so3_60/rpy_values.npy")
                 rotation_rpy = rotation_info[i,:]
                 m_b2bprime = Rotation.from_euler('xyz', rotation_rpy, degrees=False).as_matrix()
             else:
@@ -789,7 +800,6 @@ class ImuTracker:
                     else:
                         vel_data = np.vstack((t_end_us, meas)).T
                     np.savetxt(self.meas_vel, vel_data, delimiter=",")
-                        
                     
                     ## comment out to put meas = meas_gt ###
 
@@ -859,10 +869,34 @@ class ImuTracker:
             net_gyr_w, net_acc_w = self._get_imu_samples_for_network(
                 t_begin_us, t_oldest_state_us, t_end_us
             )
+                        
+            # --- [수정된 부분] ---
+            # 버퍼 데이터가 충분하지 않아 빈 배열이 반환되었는지 확인합니다.
+            if net_gyr_w.size == 0:
+                logging.debug("IMU buffer not ready for update. Skipping this cycle.")
+                return False  # did_update = False 가 되어 업데이트를 건너뜁니다.
+            # --- [여기까지] ---
+            
             # print(self.imu_buffer.net_t_us[-10:]) #diff : 10000 
+            
             meas, meas_cov = self.meas_source.get_displacement_measurement(
                 net_gyr_w, net_acc_w
             )
+
+            # #  use meas_gt #
+            # vio_data = np.load(self.vio_path)
+            # time = vio_data[:, 0]
+            # velocity = vio_data[:, -3:]
+            # qxyzw_World_Device = vio_data[:, -10:-6]
+            # interp_funcs = [interp1d(time, velocity[:, i], fill_value="extrapolate") for i in range(velocity.shape[1])]
+            # interp_funcs_quaternion = [interp1d(time, qxyzw_World_Device[:, i], fill_value="extrapolate") for i in range(qxyzw_World_Device.shape[1])]
+            # quaternion_gt = np.array([interp_func(t_end_us) for interp_func in interp_funcs_quaternion])
+            # quaternion_gt = quaternion_gt / np.linalg.norm(quaternion_gt)
+            # R_gt = Rotation.from_quat(quaternion_gt).as_matrix()  # bd -> world
+            # meas_gt = np.array([interp_func(t_end_us) for interp_func in interp_funcs]).reshape(3,-1)
+            # meas = meas_gt
+            # meas_cov = np.eye(3)
+            # #  use meas_gt #
             
         # filter update
         self.filter.update(meas, meas_cov, t_oldest_state_us, t_end_us)

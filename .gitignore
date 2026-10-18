@@ -24,3 +24,6 @@ wandb/
 test_outputs/
 batch_*_outputs*/
 filter_outputs/
+
+# outputs of the paper evaluation scripts
+scripts/paper/outputs/

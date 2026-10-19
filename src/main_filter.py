@@ -180,7 +180,8 @@ if __name__ == "__main__":
         logging.info("Running in one-shot mode")
         logging.info("Using dataset {}".format(data_names[args.dataset_number]))
         trackerRunner = ImuTrackerRunner(args, data_names[args.dataset_number])
-        trackerRunner.run_tracker(args)
+        # iter_num = the sequence index (matches batch mode's enumerate i and the so3 rpy_values row)
+        trackerRunner.run_tracker(args, args.dataset_number)
     else:
         logging.info("Running in batch mode")
         # add metadata for logging

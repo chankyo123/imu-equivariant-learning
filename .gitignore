@@ -1,8 +1,29 @@
-local_data*
-data
-__pycache__
+__pycache__/
 *.pyc
-*.swp
-*.swo
-train_result
-*outputs*
+.ipynb_checkpoints/
+# data and model artifacts (download separately, see README)
+/local_data/
+/local_data*/
+eqnio/TLIO-master/local_data/
+/models/
+/models_*/
+/checkpoints/*/
+!/checkpoints/MANIFEST.md
+airio/experiments/
+airio/logs/
+airio/wandb/
+eqnio/TLIO-master/local_data/
+*.pt
+*.ckpt
+*.npy
+*.pickle
+*.pkl
+*.log
+events.out.tfevents.*
+wandb/
+test_outputs/
+batch_*_outputs*/
+filter_outputs/
+
+# outputs of the paper evaluation scripts
+scripts/paper/outputs/

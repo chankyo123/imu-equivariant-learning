@@ -106,17 +106,47 @@ class ImuCalib:
             "loading offline calib from "
             + osp.join(args.root_dir, dataset, "calibration.json")
         )
-        with open(osp.join(args.root_dir, dataset, "calibration.json"), 'r') as f:
-            calib_json = json.load(f)
+        # with open(osp.join(args.root_dir, dataset, "calibration.json"), 'r') as f:
+        #     calib_json = json.load(f)
             
-        ret.accelBias = np.array(calib_json["Accelerometer"]["Bias"]["Offset"])[:,None]
-        ret.gyroBias = np.array(calib_json["Gyroscope"]["Bias"]["Offset"])[:,None]
-        ret.accelScaleInv = np.linalg.inv(np.array(
-            calib_json["Accelerometer"]["Model"]["RectificationMatrix"]
-        ))
-        ret.gyroScaleInv = np.linalg.inv(np.array(
-            calib_json["Gyroscope"]["Model"]["RectificationMatrix"]
-        ))
+        # ret.accelBias = np.array(calib_json["Accelerometer"]["Bias"]["Offset"])[:,None]
+        # ret.gyroBias = np.array(calib_json["Gyroscope"]["Bias"]["Offset"])[:,None]
+        # ret.accelScaleInv = np.linalg.inv(np.array(
+        #     calib_json["Accelerometer"]["Model"]["RectificationMatrix"]
+        # ))
+        # ret.gyroScaleInv = np.linalg.inv(np.array(
+        #     calib_json["Gyroscope"]["Model"]["RectificationMatrix"]
+        # ))
+        # return ret
+        calib_path = osp.join(args.root_dir, dataset, "calibration.json")
+        try:
+            # calibration.json 파일 로드를 시도합니다.
+            logging.info(f"Attempting to load offline calib from {calib_path}")
+            with open(calib_path, 'r') as f:
+                calib_json = json.load(f)
+            
+            # 파일이 존재하면 파일에서 값을 읽어옵니다.
+            ret.accelBias = np.array(calib_json["Accelerometer"]["Bias"]["Offset"])[:, None]
+            ret.gyroBias = np.array(calib_json["Gyroscope"]["Bias"]["Offset"])[:, None]
+            ret.accelScaleInv = np.linalg.inv(np.array(
+                calib_json["Accelerometer"]["Model"]["RectificationMatrix"]
+            ))
+            ret.gyroScaleInv = np.linalg.inv(np.array(
+                calib_json["Gyroscope"]["Model"]["RectificationMatrix"]
+            ))
+            logging.info("Successfully loaded offline calibration.")
+
+        except FileNotFoundError:
+            # 파일이 존재하지 않으면 경고를 출력하고 기본값을 설정합니다.
+            logging.warning(
+                f"Calibration file not found at {calib_path}. "
+                "Using default values (zero bias, identity scale matrix)."
+            )
+            ret.accelBias = np.zeros((3, 1))      # 3x1 영행렬
+            ret.gyroBias = np.zeros((3, 1))       # 3x1 영행렬
+            ret.accelScaleInv = np.eye(3)         # 3x3 항등행렬
+            ret.gyroScaleInv = np.eye(3)          # 3x3 항등행렬
+            
         return ret
 
     def calibrate_raw(self, acc, gyr):

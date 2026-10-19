@@ -62,9 +62,28 @@ class ImuBuffer:
         assert isinstance(t_us_end, int)
         update_freq = int(update_freq)
         
-        # print(t_begin_us, t_end_us, self.net_t_us)
+        # print("--") 
         begin_idx = np.where(self.net_t_us == t_begin_us)[0][0]
+        # print(begin_idx)
         end_idx = np.where(self.net_t_us == t_us_end)[0][0]
+        # end_idx = begin_idx + 199
+        
+        # # --- [수정 제안] ---
+        # # 필요한 마지막 인덱스를 미리 계산
+        
+        # # np.arange는 stop 값을 포함하지 않으므로, 실제 필요한 최대 인덱스는 stop-1 입니다.
+        # # 안전하게 버퍼 크기를 확인합니다.
+        # required_size = end_idx + 1
+        # if update_freq == 1000:
+        #     required_size = end_idx + 5 # arange의 stop 값이 end_idx + 5 이므로 이만큼 필요
+
+        # if required_size > len(self.net_acc):
+        #     # 버퍼에 데이터가 충분하지 않은 경우 경고를 남기고 빈 배열을 반환
+        #     print(f"WARN: Buffer size ({len(self.net_acc)}) is not sufficient to get data. Required size: {required_size}. Skipping.")
+        #     # 상위 호출 함수가 빈 배열을 받고 처리할 수 있도록 함
+        #     return np.array([]), np.array([]), np.array([])
+        # # --- [여기까지] ---
+
         if update_freq == 1000:
             indices = np.arange(begin_idx, end_idx + 5, 5)
         else:
@@ -84,14 +103,14 @@ class ImuBuffer:
         # assert False
         
         # print("inside buffer : ", self.net_acc.shape, self.net_gyr.shape, self.net_t_us.shape)
-        # net_acc = self.net_acc[begin_idx : end_idx + 1, :]
-        # net_gyr = self.net_gyr[begin_idx : end_idx + 1, :]
-        # net_t_us = self.net_t_us[begin_idx : end_idx + 1]
+        net_acc = self.net_acc[begin_idx : end_idx + 1, :]
+        net_gyr = self.net_gyr[begin_idx : end_idx + 1, :]
+        net_t_us = self.net_t_us[begin_idx : end_idx + 1]
         
         # print(self.net_acc.shape, indices)
-        net_acc = self.net_acc[indices]
-        net_gyr = self.net_gyr[indices]
-        net_t_us = self.net_t_us[indices]
+        # net_acc = self.net_acc[indices]
+        # net_gyr = self.net_gyr[indices]
+        # net_t_us = self.net_t_us[indices]
         
         # print(t_begin_us, net_t_us[:3])
         

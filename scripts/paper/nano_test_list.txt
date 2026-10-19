@@ -1,0 +1,17 @@
+B11_random_waypoints_rep1
+B8_star_slow_rep2
+B9_trefoil_medium_rep13
+B2_circle_medium_rep2
+B9_trefoil_fast_rep8
+B9_trefoil_slow_rep3
+B9_trefoil_medium_rep9
+B2_circle_slow_rep1
+B9_trefoil_slow_rep8
+B3_figure8_fast_rep2
+B5_helix_medium_rep1
+B5_helix_rep1
+B6_linear_ramp_rep2
+B9_trefoil_slow_rep16
+B10_lissajous_slow_rep1
+B2_circle_slow_rep2
+B9_trefoil_medium_rep4

@@ -1,0 +1,12 @@
+dataset: configs/datasets/BlackBird/blackbird_body.conf
+device: cuda:0
+
+exp:
+  airimu_exp: PATH_TO_AIRIMU_NETOUTPUT
+  airio_exp: PATH_TO_AIRIO_NETOUTPUT
+  savedir: ./EKFresult
+
+train:
+  bias_weight: 1.0e-12
+  imu_cov_scale: 100.0
+  obs_cov_scale: 0.1

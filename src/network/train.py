@@ -25,11 +25,27 @@ def torch_to_numpy(torch_arr):
     return torch_arr.cpu().detach().numpy()
 
 
-def get_inference(network, data_loader, device, epoch, body_frame_3regress = False, body_frame = False, transforms=[]):
+def _forward_with_cov_train(network, feat, cov_type):
+    """train/val용 forward dispatch."""
+    if cov_type == 'eq_spec':
+        pred, pred_V, pred_inv = network(feat)
+        return pred, (pred_V, pred_inv), pred_inv
+    elif cov_type == 'eq_chol' or cov_type == 'eq_chol_svd':
+        # Same network output (A in R^{B x 3 x 3}); only the loss interpretation differs.
+        pred, pred_A = network(feat)
+        sig2 = (pred_A ** 2).sum(dim=-1)
+        pred_log_std = 0.5 * torch.log(sig2.clamp(min=1e-8))
+        return pred, pred_A, pred_log_std
+    else:
+        pred, pred_cov = network(feat)
+        return pred, pred_cov, pred_cov
+
+
+def get_inference(network, data_loader, device, epoch,
+                  body_frame_3regress=False, body_frame=False, transforms=[],
+                  cov_type='diag', mse_warmup_epochs=10):
     """
-    Obtain attributes from a data loader given a network state
-    Outputs all targets, predicts, predicted covariance params, and losses in numpy arrays
-    Enumerates the whole data loader
+    Validation inference. Mirrors do_train's forward/loss dispatch.
     """
     targets_all, preds_all, preds_cov_all, losses_all = [], [], [], []
     targets_vel_all, preds_vel_all = [], []
@@ -40,45 +56,43 @@ def get_inference(network, data_loader, device, epoch, body_frame_3regress = Fal
         for transform in transforms:
             sample = transform(sample)
         feat = sample["feats"]["imu0"]
-        if body_frame_3regress: 
-            pred, pred_cov, pred_vel = network(feat)
-            # print(feat.shape, pred.shape, pred_cov.shape)
-        else:
-            pred, pred_cov = network(feat)
-            pred_vel = pred.clone()
-        
-        if len(pred.shape) == 2:
-            targ = sample["targ_dt_World"][:,-1,:]
-            if body_frame: 
-                # print("body frame is running in inference!!")
-                targ_vel = sample["vel_Body"][:,-1,:]
-                targ = sample["vel_Body"][:,-1,:]
-                # print("Jere!!!!")
-                # targ_vel = sample["targ_dt_Body"][:,-1,:]
-                # targ = sample["targ_dt_Body"][:,-1,:]
-            else:
-                # targ_vel = sample["vel_World"][:,-1,:]
-                targ_vel = sample["targ_dt_World"][:,-1,:]
-        else:
-            # Leave off zeroth element since it's 0's. Ex: Net predicts 199 if there's 200 GT
-            targ = sample["targ_dt_World"][:,1:,:].permute(0,2,1)
 
-        if body_frame_3regress: 
-            loss = get_loss(pred_vel, pred_cov, targ_vel, epoch, body_frame_3regress)
+        if body_frame_3regress:
+            pred, pred_cov, pred_vel = network(feat)
+            pred_cov_params = pred_cov
+            pred_cov_for_log = pred_cov
         else:
-            #1. use dt as target
-            # print("second loss is running in inference!")
-            loss = get_loss(pred, pred_cov, targ, epoch, False)
-            
-            #2. use v as target
-            # loss = get_loss(pred, pred_cov, targ_vel, epoch, False)
+            pred, pred_cov_params, pred_cov_for_log = _forward_with_cov_train(
+                network, feat, cov_type)
+            pred_vel = pred.clone()
+
+        if len(pred.shape) == 2:
+            targ = sample["targ_dt_World"][:, -1, :]
+            if body_frame:
+                targ_vel = sample["vel_Body"][:, -1, :]
+                targ = sample["vel_Body"][:, -1, :]
+            else:
+                targ_vel = sample["targ_dt_World"][:, -1, :]
+        else:
+            targ = sample["targ_dt_World"][:, 1:, :].permute(0, 2, 1)
+
+        if body_frame_3regress:
+            loss = get_loss(pred_vel, pred_cov_params, targ_vel, epoch,
+                            body_frame_3regress=True, cov_type='diag',
+                            mse_warmup_epochs=mse_warmup_epochs)
+        else:
+            loss = get_loss(pred, pred_cov_params, targ, epoch,
+                            body_frame_3regress=False,
+                            cov_type=cov_type,
+                            mse_warmup_epochs=mse_warmup_epochs,
+                            nll_weight=1.0,
+                            mse_anchor_weight=0.0)   # val에서는 anchor 빼기
 
         targets_all.append(torch_to_numpy(targ))
         preds_all.append(torch_to_numpy(pred))
-        preds_cov_all.append(torch_to_numpy(pred_cov))
+        preds_cov_all.append(torch_to_numpy(pred_cov_for_log))
         targets_vel_all.append(torch_to_numpy(targ_vel))
         preds_vel_all.append(torch_to_numpy(pred_vel))
-        
         losses_all.append(torch_to_numpy(loss))
 
     targets_all = np.concatenate(targets_all, axis=0)
@@ -87,7 +101,7 @@ def get_inference(network, data_loader, device, epoch, body_frame_3regress = Fal
     losses_all = np.concatenate(losses_all, axis=0)
     targets_vel_all = np.concatenate(targets_vel_all, axis=0)
     preds_vel_all = np.concatenate(preds_vel_all, axis=0)
-    attr_dict = {
+    return {
         "targets": targets_all,
         "preds": preds_all,
         "preds_cov": preds_cov_all,
@@ -95,145 +109,93 @@ def get_inference(network, data_loader, device, epoch, body_frame_3regress = Fal
         "targets_vel": targets_vel_all,
         "preds_vel": preds_vel_all,
     }
-    return attr_dict
 
 
-def do_train(network, train_loader, device, epoch, optimizer, input_dim, transforms=[], body_frame_3regress = False, body_frame = False):
+def do_train(network, train_loader, device, epoch, optimizer, input_dim,
+             transforms=[], body_frame_3regress=False, body_frame=False,
+             cov_type='diag', mse_warmup_epochs=10, mse_anchor_weight=0.1,
+             nll_weight=1.0, grad_clip=0.1, freeze_cov_keys=None):
     """
-    Train network for one epoch using a specified data loader
-    Outputs all targets, predicts, predicted covariance params, and losses in numpy arrays
+    Train network for one epoch using a specified data loader.
     """
     train_targets, train_preds, train_preds_cov, train_losses = [], [], [], []
-    train_targets_vel, train_preds_vel  = [], []
+    train_targets_vel, train_preds_vel = [], []
     network.train()
+    if freeze_cov_keys is not None:
+        # Keep frozen mean/backbone in EVAL (running BN stats, no dropout) so the mean is
+        # byte-identical across the diagonal and spectral arms; only the cov head trains.
+        network.eval()
+        for _nm, _m in network.named_modules():
+            if _nm.startswith(freeze_cov_keys):
+                _m.train()
 
-    #for bid, (feat, targ, _, _) in enumerate(train_loader):
     for bid, sample in enumerate(train_loader):
         sample = to_device(sample, device)
-        
         for transform in transforms:
             sample = transform(sample)
         feat = sample["feats"]["imu0"]
         optimizer.zero_grad()
-        if bid <6 and (epoch< 11 or (epoch <= 100 and epoch>=90) or (epoch <=200 and epoch >= 190)):
+        if bid < 6 and (epoch < 11 or (90 <= epoch <= 100) or (190 <= epoch <= 200)):
             print('bid = ', bid)
-            
-        # >>> SO(3) Equivariance Check
-        rotation_matrix = np.array([[0.1097, 0.1448, 0.9834],[0.8754, -0.4827, -0.0266],[0.4708, 0.8637, -0.1797]])
-        rotation_matrix = torch.from_numpy(rotation_matrix).to('cuda').to(torch.float32)
-        accelerometer_data = feat[:, :3,:].to(torch.float32)
-        accelerometer_data = accelerometer_data.permute(1,0,2).reshape(3,-1)
-        gyroscope_data = feat[:, 3:6, :].to(torch.float32)
-        gyroscope_data = gyroscope_data.permute(1,0,2).reshape(3,-1)
-        if input_dim in (9, 18):
-            vel_data = feat[:, 6:9, :].to(torch.float32)
-            vel_data = vel_data.permute(1,0,2).reshape(3,-1)
-            if input_dim == 18:
-                ori_data_1 = feat[:, 9:12, :].to(torch.float32)
-                ori_data_2 = feat[:, 12:15, :].to(torch.float32)
-                ori_data_3 = feat[:, 15:18, :].to(torch.float32)
-                ori_data_1 = ori_data_1.permute(1,0,2).reshape(3,-1)
-                ori_data_2 = ori_data_2.permute(1,0,2).reshape(3,-1)
-                ori_data_3 = ori_data_3.permute(1,0,2).reshape(3,-1)
-                
-        rotated_accelerometer_data = torch.matmul(rotation_matrix, accelerometer_data)
-        rotated_accelerometer_data = rotated_accelerometer_data.reshape(rotated_accelerometer_data.size(0), feat.size(0), feat.size(2))
-        rotated_accelerometer_data = rotated_accelerometer_data.permute(1,0,2)
-        rotated_gyroscope_data = torch.matmul(rotation_matrix, gyroscope_data)
-        rotated_gyroscope_data = rotated_gyroscope_data.reshape(rotated_gyroscope_data.size(0), feat.size(0), feat.size(2))
-        rotated_gyroscope_data = rotated_gyroscope_data.permute(1,0,2)
-        if input_dim in (9, 18):
-            rotated_vel_data = torch.matmul(rotation_matrix, vel_data)
-            rotated_vel_data = rotated_vel_data.reshape(rotated_vel_data.size(0), feat.size(0), feat.size(2))
-            rotated_vel_data = rotated_vel_data.permute(1,0,2)
-            if input_dim == 18:
-                rotated_ori_data1 = torch.matmul(rotation_matrix, ori_data_1)
-                rotated_ori_data2 = torch.matmul(rotation_matrix, ori_data_2)
-                rotated_ori_data3 = torch.matmul(rotation_matrix, ori_data_3)
-                rotated_ori_data1 = rotated_ori_data1.reshape(rotated_ori_data1.size(0), feat.size(0), feat.size(2))
-                rotated_ori_data1 = rotated_ori_data1.permute(1,0,2)
-                rotated_ori_data2 = rotated_ori_data2.reshape(rotated_ori_data2.size(0), feat.size(0), feat.size(2))
-                rotated_ori_data2 = rotated_ori_data2.permute(1,0,2)
-                rotated_ori_data3 = rotated_ori_data3.reshape(rotated_ori_data3.size(0), feat.size(0), feat.size(2))
-                rotated_ori_data3 = rotated_ori_data3.permute(1,0,2)
-        
-        if input_dim in (9, 18):
-            feat_rot = torch.cat((rotated_accelerometer_data, rotated_gyroscope_data, rotated_vel_data), dim=1)
-            if input_dim == 18:
-                feat_rot = torch.cat((rotated_accelerometer_data, rotated_gyroscope_data, rotated_vel_data, rotated_ori_data1, rotated_ori_data2, rotated_ori_data3), dim=1)
-        else:
-            feat_rot = torch.cat((rotated_accelerometer_data, rotated_gyroscope_data), dim=1)
-        # <<< SO(3) Equivariance Check
-        
+
+        # ---- Forward (cov_type 분기) ----
         if body_frame_3regress:
             pred, pred_cov, pred_vel = network(feat)
+            pred_cov_params = pred_cov
+            pred_cov_for_log = pred_cov
         else:
-            pred, pred_cov= network(feat)
-            pred_vel = pred.clone()
-            
-        if body_frame_3regress: 
-            pred_rot, pred_cov_rot, pred_vel_rot = network(feat_rot)
-        else:
-            pred_rot, pred_cov_rot = network(feat_rot)
-        # # print(torch.matmul(pred_vel,rotation_matrix)[:3,:3])
-        # # print(pred_vel_rot[:3,:3])
-        # # print()
-
-        if len(pred.shape) == 2:
-            targ = sample["targ_dt_World"][:,-1,:]
-            if body_frame:
-                # print("body frame is running in training!!")
-                targ_vel = sample["vel_Body"][:,-1,:]
-                targ = sample["vel_Body"][:,-1,:]
-                # print("Jere!!")
-                # targ_vel = sample["targ_dt_Body"][:,-1,:]
-                # targ = sample["targ_dt_Body"][:,-1,:]
+            if cov_type == 'eq_spec':
+                pred, pred_V, pred_inv = network(feat)
+                pred_cov_params = (pred_V, pred_inv)
+                pred_cov_for_log = pred_inv                     # (B,3) log-std
+                pred_vel = pred.clone()
+            elif cov_type == 'eq_chol' or cov_type == 'eq_chol_svd':
+                pred, pred_A = network(feat)                    # pred_A: (B,3,3)
+                pred_cov_params = pred_A
+                with torch.no_grad():
+                    sig2 = (pred_A ** 2).sum(dim=-1)            # diag(A A^T)
+                    pred_cov_for_log = 0.5 * torch.log(sig2.clamp(min=1e-8))
+                pred_vel = pred.clone()
             else:
-                # 1. learn vel
-                # targ_vel = sample["vel_World"][:,-1,:]
-                # 2. learn disp
-                targ_vel = sample["targ_dt_World"][:,-1,:]
-                targ = sample["vel_Body"][:,-1,:]
-        else:
-            # Leave off zeroth element since it's 0's. Ex: Net predicts 199 if there's 200 GT
-            targ = sample["targ_dt_World"][:,1:,:].permute(0,2,1)
+                pred, pred_cov = network(feat)
+                pred_cov_params = pred_cov
+                pred_cov_for_log = pred_cov
+                pred_vel = pred.clone()
 
-        if body_frame_3regress: 
-            loss = get_loss(pred_vel, pred_cov, targ_vel, epoch, body_frame_3regress)
+        # ---- Target 결정 ----
+        if len(pred.shape) == 2:
+            targ = sample["targ_dt_World"][:, -1, :]
+            if body_frame:
+                targ_vel = sample["vel_Body"][:, -1, :]
+                targ = sample["vel_Body"][:, -1, :]
+            else:
+                targ_vel = sample["targ_dt_World"][:, -1, :]
         else:
-            #1. use dt as target
-            # print("second loss is running in training!")
-            loss = get_loss(pred, pred_cov, targ, epoch, False)
-            
-            # 2. use v as target
-            # loss = get_loss(pred, pred_cov, targ_vel, epoch, False)
+            targ = sample["targ_dt_World"][:, 1:, :].permute(0, 2, 1)
+
+        # ---- Loss ----
+        if body_frame_3regress:
+            loss = get_loss(pred_vel, pred_cov_params, targ_vel, epoch,
+                            body_frame_3regress=True, cov_type='diag',
+                            mse_warmup_epochs=mse_warmup_epochs)
+        else:
+            loss = get_loss(pred, pred_cov_params, targ, epoch,
+                    body_frame_3regress=False,
+                    cov_type=cov_type,
+                    mse_warmup_epochs=mse_warmup_epochs,
+                    nll_weight=nll_weight,
+                    mse_anchor_weight=mse_anchor_weight)
 
         train_targets.append(torch_to_numpy(targ))
         train_preds.append(torch_to_numpy(pred))
-        train_preds_cov.append(torch_to_numpy(pred_cov))
+        train_preds_cov.append(torch_to_numpy(pred_cov_for_log))
         train_losses.append(torch_to_numpy(loss))
         train_targets_vel.append(torch_to_numpy(targ_vel))
         train_preds_vel.append(torch_to_numpy(pred_vel))
-            
-        #print("Loss full: ", loss)
 
         loss = loss.mean()
         loss.backward()
-
-        #print("Loss mean: ", loss.item())
-        
-        # print("Gradients:")
-        # for name, param in network.named_parameters():
-        #    if param.requires_grad:
-        #         print(f'Parameter: {name} - gradient statistics:')
-        #         print(name, ": ", param.grad)
-                # print(f'  - Max: {torch.max(param.grad).item()}')
-                # print(f'  - Min: {torch.min(param.grad).item()}')
-                # print(f'  - Mean: {torch.mean(param.grad).item()}')
-                # print(f'  - Std: {torch.std(param.grad).item()}')
-
-        torch.nn.utils.clip_grad_norm_(network.parameters(), 0.1, error_if_nonfinite=True)
-        # torch.nn.utils.clip_grad_norm_(network.parameters(), 0.1, error_if_nonfinite=False)
+        torch.nn.utils.clip_grad_norm_(network.parameters(), grad_clip, error_if_nonfinite=True)
         optimizer.step()
 
     train_targets = np.concatenate(train_targets, axis=0)
@@ -263,16 +225,20 @@ def write_summary(summary_writer, attr_dict, epoch, optimizer, mode):
     if len(mse_loss.shape) == 2:
         assert mse_loss.shape[0] == 3
         mse_loss = mse_loss[:, -1]
-        assert sigmas.shape[1] == 3
-        sigmas = sigmas[:,:,-1]
+        if sigmas.ndim == 3 and sigmas.shape[1] == 3:
+            sigmas = sigmas[:, :, -1]
     summary_writer.add_scalar(f"{mode}_loss/loss_x", mse_loss[0], epoch)
     summary_writer.add_scalar(f"{mode}_loss/loss_y", mse_loss[1], epoch)
     summary_writer.add_scalar(f"{mode}_loss/loss_z", mse_loss[2], epoch)
     summary_writer.add_scalar(f"{mode}_loss/avg", np.mean(mse_loss), epoch)
     summary_writer.add_scalar(f"{mode}_dist/loss_full", ml_loss, epoch)
-    summary_writer.add_histogram(f"{mode}_hist/sigma_x", sigmas[:, 0], epoch)
-    summary_writer.add_histogram(f"{mode}_hist/sigma_y", sigmas[:, 1], epoch)
-    summary_writer.add_histogram(f"{mode}_hist/sigma_z", sigmas[:, 2], epoch)
+    # sigma 차원 안전 처리: 1D면 평균, 2D면 x/y/z 따로
+    if sigmas.ndim == 2 and sigmas.shape[1] >= 3:
+        summary_writer.add_histogram(f"{mode}_hist/sigma_x", sigmas[:, 0], epoch)
+        summary_writer.add_histogram(f"{mode}_hist/sigma_y", sigmas[:, 1], epoch)
+        summary_writer.add_histogram(f"{mode}_hist/sigma_z", sigmas[:, 2], epoch)
+    else:
+        summary_writer.add_histogram(f"{mode}_hist/sigma_all", sigmas.reshape(-1), epoch)
     if epoch > 0:
         summary_writer.add_scalar(
             "optimizer/lr", optimizer.param_groups[0]["lr"], epoch - 1
@@ -403,13 +369,39 @@ def net_train(args):
     train_loader, val_loader = None, None
     start_t = time.time()
     
+    # data = TlioData(
+    #     args.root_dir, 
+    #     batch_size=args.batch_size, 
+    #     dataset_style=args.dataset_style, 
+    #     num_workers=args.workers,
+    #     persistent_workers=args.persistent_workers,
+    #     window_time=args.window_time
+    # )
+    aug_opts = {
+        "do_bias_shift": bool(args.do_bias_shift),
+        "bias_shift_options": {
+            "accel_bias_range": args.accel_bias_range * args.bias_scale,
+            "gyro_bias_range":  args.gyro_bias_range  * args.bias_scale,
+            "accel_noise_std":  args.accel_noise_std,
+            "gyro_noise_std":   args.gyro_noise_std,
+            "mag_bias_range": 0.05,
+            "barom_press_bias_range": 0.01,
+            "barom_temp_bias_range": 1.0,
+        },
+        "perturb_gravity": bool(args.perturb_gravity),
+        "perturb_gravity_theta_range": float(args.perturb_gravity_theta_range),
+        "so3_train_aug": bool(getattr(args, "so3_train_aug", False)),
+        "so3_train_aug_max_deg": float(getattr(args, "so3_train_aug_max_deg", 180.0)),
+    }
+
     data = TlioData(
-        args.root_dir, 
-        batch_size=args.batch_size, 
-        dataset_style=args.dataset_style, 
+        args.root_dir,
+        batch_size=args.batch_size,
+        dataset_style=args.dataset_style,
         num_workers=args.workers,
         persistent_workers=args.persistent_workers,
-        window_time=args.window_time
+        window_time=args.window_time,
+        augmentation_options=aug_opts,
     )
     data.prepare_data()
     
@@ -444,7 +436,7 @@ def net_train(args):
     elif "/res" in args.out_dir or "resnet" in args.out_dir or "/eq_" in args.out_dir or "/vn_" in args.out_dir or "/ln_" in args.out_dir:
         body_frame_3regress = False
     else:
-        body_frame_3regress = True
+        body_frame_3regress = False
     if not body_frame: 
         train_transforms = data.get_train_transforms()
     else:
@@ -474,17 +466,58 @@ def net_train(args):
     device = torch.device(
         "cuda:0" if torch.cuda.is_available() and not args.cpu else "cpu"
     )
+    net_config["init_log_a_scale"] = getattr(args, "init_log_a_scale", None)
     network = get_model(args.arch, net_config, args.input_dim, args.output_dim)
     network.to(device)
     total_params = network.get_num_params()
     logging.info(f'Network "{args.arch}" loaded to device {device}')
     logging.info(f"Total number of parameters: {total_params}")
+    # ---- resolve cov_type once (needed for freeze_mean head selection) ----
+    if getattr(args, "cov_type", "auto") != "auto":
+        _cov_type0 = args.cov_type
+    else:
+        _al = (args.arch or "").lower()
+        # spectral heads: ln_resnet_cov and the ln189-anchored speccov archs (their *_diag variants are 'diag')
+        _cov_type0 = 'eq_chol' if _al == 'ln_resnet_chol' else (
+            'eq_spec' if _al in ('ln_resnet_cov', 'ln189_speccov', 'ln189_speccov_s0') else 'diag')
+
+    # ---- freeze_mean: load a base checkpoint, freeze backbone+mean, train ONLY the cov head ----
+    freeze_cov_keys = None
+    if getattr(args, "freeze_mean", False):
+        if args.model_path is not None and osp.exists(args.model_path):
+            base = torch.load(args.model_path, map_location=device)
+            sd = base.get("model_state_dict", base)
+            missing, unexpected = network.load_state_dict(sd, strict=False)
+            logging.info(f"[freeze_mean] loaded base mean from {args.model_path}: "
+                         f"{len(missing)} missing / {len(unexpected)} unexpected keys")
+        else:
+            logging.warning("[freeze_mean] no valid --model_path base; freezing a randomly-init mean!")
+        COVKEYS = {
+            # pca_cov archs use output_block2..7; the ln189_speccov* archs use spec_V*/spec_e*.
+            # Both prefixes are listed (each arch only has one set; the other is a no-op).
+            'eq_spec': ('output_block2', 'output_block3', 'output_block4',
+                        'output_block5', 'output_block6', 'output_block7', 'inv_head_shared',
+                        'spec_V', 'spec_e'),
+            'diag':    ('output_block_diag',),
+            'eq_chol': ('output_block_a1', 'output_block_a2', 'output_block_a3', 'log_a_scale'),
+        }[_cov_type0]
+        freeze_cov_keys = COVKEYS
+        n_tr = n_fr = 0
+        for name, p in network.named_parameters():
+            keep = name.startswith(COVKEYS)
+            p.requires_grad = keep
+            n_tr += p.numel() if keep else 0
+            n_fr += 0 if keep else p.numel()
+        logging.info(f"[freeze_mean] cov_type={_cov_type0}: trainable(cov head)={n_tr}  "
+                     f"frozen(mean+backbone)={n_fr}")
+
 
     # optimizer = torch.optim.Adam(network.parameters(), args.lr)
-    optimizer = torch.optim.AdamW(network.parameters(), lr=args.lr, weight_decay=5e-4)
+    _trainable = [p for p in network.parameters() if p.requires_grad]
+    optimizer = torch.optim.AdamW(_trainable, lr=args.lr,
+                              weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        # optimizer, factor=0.1, patience=10, verbose=True, eps=1e-12
-        optimizer, factor=0.2, patience=10, verbose=True, eps=1e-12
+        optimizer, factor=0.2, patience=10, eps=1e-12
     )
     logging.info(f"Optimizer: {optimizer}, Scheduler: {scheduler}")
 
@@ -526,7 +559,8 @@ def net_train(args):
     best_val_loss = np.inf
     consumed_times = []
     consumed_gpu = []
-    
+    time_mem_log = osp.join(args.out_dir, 'time_mem_log.txt')  # defined before the loop (robust to 0-epoch runs)
+
     for epoch in range(start_epoch + 1, args.epochs):
         signal.signal(
             signal.SIGINT, partial(stop_signal_handler, args, epoch, network, optimizer)
@@ -538,7 +572,30 @@ def net_train(args):
 
         logging.info(f"-------------- Training, Epoch {epoch} ---------------")
         start_t = time.time()
-        train_attr_dict = do_train(network, train_loader, device, epoch, optimizer, args.input_dim, train_transforms, body_frame_3regress, body_frame)
+        # train_attr_dict = do_train(network, train_loader, device, epoch, optimizer, args.input_dim, train_transforms, body_frame_3regress, body_frame)
+        if getattr(args, "cov_type", "auto") != "auto":
+            cov_type = args.cov_type
+        else:
+            # arch만 보고 결정 (out_dir에 chol/cov가 우연히 들어있는 경우 방지)
+            arch_lower = (args.arch or "").lower()
+            if arch_lower == "ln_resnet_chol":
+                cov_type = 'eq_chol'
+            elif arch_lower in ("ln_resnet_cov", "ln189_speccov", "ln189_speccov_s0"):
+                cov_type = 'eq_spec'
+            else:
+                cov_type = 'diag'   # incl. ln_resnet_cov_diag, ln189_speccov*_diag, resnet, imunet, ln_resnet
+        if epoch == 1:  # 한 번만 로깅
+            logging.info(f"Using cov_type = {cov_type}")
+
+        train_attr_dict = do_train(network, train_loader, device, epoch, optimizer,
+                            args.input_dim, train_transforms,
+                            body_frame_3regress, body_frame,
+                            cov_type=cov_type,
+                            mse_warmup_epochs=args.mse_warmup_epochs,
+                            mse_anchor_weight=args.mse_anchor_weight,
+                            nll_weight=args.nll_weight,
+                            grad_clip=args.grad_clip,
+                            freeze_cov_keys=freeze_cov_keys)
         mem_used_max_GB = torch.cuda.max_memory_allocated() / (1024*1024*1024)
         torch.cuda.reset_peak_memory_stats()
         mem_str = f'GPU Mem: {mem_used_max_GB:.3f}GB'
@@ -555,7 +612,11 @@ def net_train(args):
         consumed_times.append(end_t - start_t)    
             
         if val_loader is not None:
-            val_attr_dict = get_inference(network, val_loader, device, epoch, body_frame_3regress, body_frame)
+            # val_attr_dict = get_inference(network, val_loader, device, epoch, body_frame_3regress, body_frame)
+            val_attr_dict = get_inference(network, val_loader, device, epoch,
+                  body_frame_3regress, body_frame,
+                  cov_type=cov_type,
+                  mse_warmup_epochs=args.mse_warmup_epochs)
             write_summary(summary_writer, val_attr_dict, epoch, optimizer, "val")
             if np.mean(val_attr_dict["losses"]) < best_val_loss:
                 best_val_loss = np.mean(val_attr_dict["losses"])
@@ -564,7 +625,9 @@ def net_train(args):
         else:
             save_model(args, epoch, network, optimizer, best=False)
             
-        if epoch in {8,9,19,49, 80, 90, 95, 96, 98, 99, 109, 119, 129, 149, 159, 179, 189, 195, 199, 209,219,229,239,249,259,269,299, 399}:
+        if epoch in {8,9,19,49, 80, 90, 95, 96, 98, 99, 109, 119, 129, 149, 159, 179, 189, 195, 199, 209,219,229,239,249,259,269,299, 399} \
+           or os.environ.get("SAVE_ALL_EPOCHS", "0") == "1":
+            # SAVE_ALL_EPOCHS=1 -> checkpoint EVERY epoch (per-epoch filter overfitting sweep).
             save_model(args, epoch, network, optimizer, best=False, interrupt=False)
     
     mean_epoch_time = np.mean(consumed_times)

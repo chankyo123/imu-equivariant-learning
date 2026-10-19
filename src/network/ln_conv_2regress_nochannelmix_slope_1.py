@@ -9,7 +9,10 @@ from models.lie_alg_util import *
 from models.lie_neurons_layers import *
 import time
 import torch
-from fvcore.nn import FlopCountAnalysis
+try:  # optional, only used for FLOP counting
+    from fvcore.nn import FlopCountAnalysis
+except ImportError:  # pragma: no cover
+    FlopCountAnalysis = None
 
 def conv3x1(in_planes, out_planes, stride=1, groups=1, dilation=1):
     """ 1D convolution with kernel size 3 """

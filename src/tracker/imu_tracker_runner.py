@@ -9,7 +9,11 @@ from scipy.interpolate import interp1d
 from scipy.spatial.transform import Rotation
 from tracker.imu_calib import ImuCalib
 from tracker.imu_tracker import ImuTracker
-from utils.o3d_visualizer import O3dVisualizer
+try:  # open3d is optional; only needed for --visualize
+    from utils.o3d_visualizer import O3dVisualizer
+except ImportError:  # pragma: no cover
+    O3dVisualizer = None
+
 from utils.dotdict import dotdict
 from utils.logging import logging
 
@@ -97,19 +101,30 @@ class ImuTrackerRunner:
         if extracted_string:
             if "sim" not in args.root_dir:
                 # vio_path = re.sub(r'/\d{15,16}/', f'/{extracted_string}/', replace_string)
-                vio_path = args.root_dir + extracted_string + "/imu0_resampled.npy" 
+                vio_path = os.path.join(args.root_dir, extracted_string, "imu0_resampled.npy")
             else:
                 # vio_path = re.sub(r'/(?:[1-9]|[1-9][0-9]|[1-3][0-9][0-9]|400)/', f'/{extracted_string}/', replace_string)
                 # vio_path = re.sub(r'/\d{1,3}/', f'/{extracted_string}/', replace_string)
-                vio_path = args.root_dir + extracted_string + "/imu0_resampled.npy" 
-                
+                vio_path = os.path.join(args.root_dir, extracted_string, "imu0_resampled.npy")
+
             # print("Generated vio_path:", vio_path)
+            json_path = os.path.join(args.root_dir, extracted_string + "/imu0_resampled_description.json")
+
         else:
-            print("Cannot generate vio_path as no extracted string was found")
-            
+            # Fallback: use the current dataset (sequence) name directly. Supports
+            # nanobench sequence IDs like 'B11_random_waypoints_rep1' that don't match
+            # the TLIO 15-16 digit pattern.
+            vio_path = os.path.join(args.root_dir, dataset, "imu0_resampled.npy")
+            json_path = os.path.join(args.root_dir, dataset, "imu0_resampled_description.json")
+            if not os.path.exists(vio_path):
+                vio_path = "./../../ridi_tlio_csv/dan_bag1/imu0_resampled.npy"
+                json_path = None
+                print("Cannot generate vio_path as no extracted string was found")
+            else:
+                print(f"Falling back to dataset-relative vio_path: {vio_path}")
+        
         print("vio_path : ", vio_path)
         print("extracted_substring : ", extracted_string)
-        json_path = os.path.join(args.root_dir, extracted_string + "/imu0_resampled_description.json")
         print("json_path : ", json_path, " / body_frame : ", args.body_frame, "use_const_cov of TLIO : ", args.use_const_cov)
         self.vio_path = vio_path
         

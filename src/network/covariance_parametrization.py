@@ -86,6 +86,43 @@ class DiagonalParam(BaseParams):
 
         return covf.reshape((N, 3, 3))
 
+class EquivCovariance:
+    """
+    Constructs a full, anisotropic covariance matrix from an equivariant basis
+    and invariant log standard deviations, mirroring the structure in
+    loss_distribution_covariance.
+    """
+    @classmethod
+    def vec2Cov(cls, pred_V: torch.Tensor, pred_inv: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            pred_V (torch.Tensor): [N, 3, 3] tensor representing the predicted
+                                   orthonormal basis (equivariant).
+            pred_inv (torch.Tensor): [N, 3] tensor representing the predicted
+                                     log standard deviations (invariant).
+        Returns:
+            pred_cov (torch.Tensor): [N, 3, 3] full covariance matrix.
+        """
+        # Ensure correct input shapes
+        assert pred_V.shape[1:] == (3, 3), "pred_V must have shape [N, 3, 3]"
+        assert pred_inv.shape[1] == 3, "pred_inv must have shape [N, 3]"
+
+        # 1. Clamp the log standard deviations for numerical stability
+        # clamped_pred_inv = torch.clamp(pred_inv, min=MIN_LOG_STD)
+        clamped_pred_inv = pred_inv
+
+        # 2. Calculate the diagonal variance matrix in the local basis
+        # Shape: [N, 3] -> [N, 3]
+        cov_diag_values = torch.exp(clamped_pred_inv * 2)
+        # Shape: [N, 3] -> [N, 3, 3]
+        cov_diag_matrix = torch.diag_embed(cov_diag_values)
+
+        # 3. Transform the diagonal covariance into the world frame using the equivariant basis V
+        # Sigma = V * diag(sigma^2) * V^T
+        # Shape: [N, 3, 3] @ [N, 3, 3] @ [N, 3, 3] -> [N, 3, 3]
+        pred_cov = torch.matmul(pred_V, torch.matmul(cov_diag_matrix, pred_V.transpose(1, 2)))
+
+        return pred_cov
 
 class PearsonParam(BaseParams):
     """
@@ -233,3 +270,16 @@ class CovarianceParam(BaseParams):
         cov = p
 
         return cov
+    
+class EquivCholCovariance:
+    """
+    Sigma = A A^T + eps*I from an equivariant Cholesky-like factor A.
+    Used by both the loss and the downstream Kalman filter to convert
+    the network's A output into a valid SPD covariance.
+    """
+    @classmethod
+    def vec2Cov(cls, pred_A: torch.Tensor, eps: float = 1e-3) -> torch.Tensor:
+        assert pred_A.shape[-2:] == (3, 3), "pred_A must be (..., 3, 3)"
+        I = torch.eye(3, device=pred_A.device, dtype=pred_A.dtype)
+        # broadcast eps*I over batch
+        return pred_A @ pred_A.transpose(-1, -2) + eps * I

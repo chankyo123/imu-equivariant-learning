@@ -21,7 +21,7 @@ from utils.logging import logging
 from .constants import DatasetGenerationParams
 from .memmapped_sequences_dataset import MemMappedSequencesDataset
 from .iterable_pseudorandom_sequences_dataset import IterablePseudoRandomSequencesDataset
-from .data_transform import TransformAddNoiseBias, TransformPerturbGravity, TransformInYawPlane
+from .data_transform import TransformAddNoiseBias, TransformPerturbGravity, TransformInYawPlane, TransformSO3TrainAug
 
 log = logging.getLogger(__name__)
 
@@ -198,13 +198,20 @@ class TlioData:
                     **self.augmentation_options["bias_shift_options"])
             )
 
-        if self.augmentation_options["perturb_gravity"]:
-            transforms.append(
-                TransformPerturbGravity(self.data_window_config["input_sensors"], 
-                    self.augmentation_options["perturb_gravity_theta_range"])
-            )
+        # if self.augmentation_options["perturb_gravity"]:
+        #     transforms.append(
+        #         TransformPerturbGravity(self.data_window_config["input_sensors"], 
+        #             self.augmentation_options["perturb_gravity_theta_range"])
+        #     )
 
-        transforms.append(TransformInYawPlane(self.data_window_config["input_sensors"]))
+        # transforms.append(TransformInYawPlane(self.data_window_config["input_sensors"]))
+        # SO(3) random rotation augmentation (training only; rotates IMU and vector targets)
+        if self.augmentation_options.get("so3_train_aug", False):
+            max_deg = self.augmentation_options.get("so3_train_aug_max_deg", 180.0)
+            print(f"  + SO(3) train aug enabled (max_deg={max_deg})")
+            transforms.append(
+                TransformSO3TrainAug(self.data_window_config["input_sensors"], max_deg=max_deg)
+            )
         return transforms
 
     def get_train_transforms_bodyframe(self):
@@ -216,12 +223,19 @@ class TlioData:
                     **self.augmentation_options["bias_shift_options"])
             )
             
-        if self.augmentation_options["perturb_gravity"]:
-            transforms.append(
-                TransformPerturbGravity(self.data_window_config["input_sensors"], 
-                    self.augmentation_options["perturb_gravity_theta_range"])
-            )
+        # if self.augmentation_options["perturb_gravity"]:
+        #     transforms.append(
+        #         TransformPerturbGravity(self.data_window_config["input_sensors"], 
+        #             self.augmentation_options["perturb_gravity_theta_range"])
+        #     )
 
+        # SO(3) random rotation augmentation (training only; rotates IMU and vector targets)
+        if self.augmentation_options.get("so3_train_aug", False):
+            max_deg = self.augmentation_options.get("so3_train_aug_max_deg", 180.0)
+            print(f"  + SO(3) train aug enabled (max_deg={max_deg})")
+            transforms.append(
+                TransformSO3TrainAug(self.data_window_config["input_sensors"], max_deg=max_deg)
+            )
         return transforms
     
     def get_datalist(self, split="val"):

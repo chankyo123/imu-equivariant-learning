@@ -145,6 +145,27 @@ class ImuTracker:
         self.next_interp_t_us = None
         self.next_aug_t_us = None
         self.has_done_first_update = False
+
+        # --- rebuttal: filter-connected attitude-error sweep hook ---
+        # Inject a CONSTANT attitude estimate error (tilt about a horizontal axis) into the
+        # orientation used to express the network input frame. Models "the attitude estimate the
+        # framework depends on is wrong by theta". Controlled by env vars so normal runs are untouched.
+        # ATT_ERR_DEG (float, deg) and ATT_ERR_AXIS ('x'/'y'/'z'; use x or y for a gravity-TILT error,
+        # since the yaw component is removed downstream and would be a no-op).
+        _att_deg = float(os.environ.get("ATT_ERR_DEG", "0") or "0")
+        _att_axis = os.environ.get("ATT_ERR_AXIS", "x")
+        if abs(_att_deg) > 1e-9:
+            _ax = {"x": [1.0, 0.0, 0.0], "y": [0.0, 1.0, 0.0], "z": [0.0, 0.0, 1.0]}.get(
+                _att_axis, [1.0, 0.0, 0.0]
+            )
+            self._att_err_R = Rotation.from_rotvec(
+                np.deg2rad(_att_deg) * np.array(_ax)
+            ).as_matrix()
+            logging.info(
+                f"[ATT-SWEEP] injecting {_att_deg} deg attitude error about {_att_axis} into net-input frame"
+            )
+        else:
+            self._att_err_R = None
         
         self.body_frame = body_frame
         self.vio_path = vio_path
@@ -177,6 +198,14 @@ class ImuTracker:
         net_acc, net_gyr, net_tus = self.imu_buffer.get_data_from_to(
             net_tus_begin, net_tus_end, self.update_freq
         )
+        
+        # --- [수정된 부분] ---
+        # 버퍼에서 빈 배열을 반환했는지 여기서 먼저 확인합니다.
+        # 만약 데이터가 부족하면, assert를 실행하기 전에 빈 배열을 그대로 반환합니다.
+        if net_gyr.size == 0:
+            return np.array([]), np.array([])
+        # --- [여기까지] ---
+        
         # print(net_tus[-10:])
         # print(net_gyr.shape, self.net_input_size, net_tus.shape)
         assert net_gyr.shape[0] == self.net_input_size
@@ -187,7 +216,7 @@ class ImuTracker:
         # print(net_tus_begin, net_tus[:3]) #og TLIO에서 net_tus_end - net_tus[-1] = 1000 딱 떨어짐, 그리고 5000씩 딱딱 맞춰 증가, 200hz 이아헹선 아예 같음
         # print("is running here?2")
         if self.body_frame:
-            if "last_align" in self.model_path:
+            if "last_align" in self.model_path or "lfa" in self.model_path:
                 
                 # ####1. use R from raw gyro data
                 Rs_bofbi = np.zeros((net_tus.shape[0], 3, 3))  # N x 3 x 3
@@ -233,12 +262,17 @@ class ImuTracker:
                 # assert False
                 
                 net_acc_w = np.einsum("tij,tj->ti", Rs_bofbi, net_acc)  # N x 3
+                net_gyr_w = np.einsum("tij,tj->ti", Rs_bofbi, net_gyr)  # N x 3
                 
             
         else:
             # get data from filter
             R_oldest_state_wfb, _ = self.filter.get_past_state(t_oldest_state_us)  #   3 x 3  #using ekf
-            
+
+            # rebuttal attitude-error sweep: corrupt the attitude estimate feeding the net-input frame
+            if getattr(self, "_att_err_R", None) is not None:
+                R_oldest_state_wfb = self._att_err_R @ R_oldest_state_wfb
+
             # # R_oldest_state_wfb, _ = self.filter.get_past_state(t_oldest_state_us+50000)  # 3 x 3    #using riekf
             # vio_data = np.load(s/elf.vio_path)
             # time = vio_data[:, 0]
@@ -470,14 +504,17 @@ class ImuTracker:
         if do_interpolation_of_imu:
             self._add_interpolated_imu_to_buffer(acc_biascpst, gyr_biascpst, t_us)
         
-        if not self.use_riekf : 
+        if not self.use_riekf :
             if "so3" in self.vio_path:
-                rotation_info = np.load("./../so3_local_data_bodyframe/rpy_values.npy")
+                # world SO(3) test: rpy_values.npy lives at the dataset root (dirname of the seq dir),
+                # indexed by the SEQUENCE index i (== iter_num from the runner). Robust to cwd.
+                _rpy_path = os.path.join(os.path.dirname(os.path.dirname(self.vio_path)), "rpy_values.npy")
+                rotation_info = np.load(_rpy_path)
                 rotation_rpy = rotation_info[i,:]
                 m_b2bprime = Rotation.from_euler('xyz', rotation_rpy, degrees=False).as_matrix()
             else:
                 m_b2bprime = np.eye(3)
-                
+
             self.filter.propagate(
                 # acc_raw, gyr_raw, t_us, t_augmentation_us=t_augmentation_us
                 acc_raw, gyr_raw, t_us, t_augmentation_us=t_augmentation_us, m_b2bprime=m_b2bprime
@@ -486,12 +523,13 @@ class ImuTracker:
             
         else:
             if "so3" in self.vio_path:
-                rotation_info = np.load("./../so3_local_data_bodyframe/rpy_values.npy")
+                _rpy_path = os.path.join(os.path.dirname(os.path.dirname(self.vio_path)), "rpy_values.npy")
+                rotation_info = np.load(_rpy_path)
                 rotation_rpy = rotation_info[i,:]
                 m_b2bprime = Rotation.from_euler('xyz', rotation_rpy, degrees=False).as_matrix()
             else:
                 m_b2bprime = np.eye(3)
-            
+
             # assert t_augmentation_us is not None
             self.filter.propagate_riekf(
                 # acc_raw, gyr_raw, t_us, m_b2bprime
@@ -789,7 +827,6 @@ class ImuTracker:
                     else:
                         vel_data = np.vstack((t_end_us, meas)).T
                     np.savetxt(self.meas_vel, vel_data, delimiter=",")
-                        
                     
                     ## comment out to put meas = meas_gt ###
 
@@ -859,10 +896,34 @@ class ImuTracker:
             net_gyr_w, net_acc_w = self._get_imu_samples_for_network(
                 t_begin_us, t_oldest_state_us, t_end_us
             )
+                        
+            # --- [수정된 부분] ---
+            # 버퍼 데이터가 충분하지 않아 빈 배열이 반환되었는지 확인합니다.
+            if net_gyr_w.size == 0:
+                logging.debug("IMU buffer not ready for update. Skipping this cycle.")
+                return False  # did_update = False 가 되어 업데이트를 건너뜁니다.
+            # --- [여기까지] ---
+            
             # print(self.imu_buffer.net_t_us[-10:]) #diff : 10000 
+            
             meas, meas_cov = self.meas_source.get_displacement_measurement(
                 net_gyr_w, net_acc_w
             )
+
+            # #  use meas_gt #
+            # vio_data = np.load(self.vio_path)
+            # time = vio_data[:, 0]
+            # velocity = vio_data[:, -3:]
+            # qxyzw_World_Device = vio_data[:, -10:-6]
+            # interp_funcs = [interp1d(time, velocity[:, i], fill_value="extrapolate") for i in range(velocity.shape[1])]
+            # interp_funcs_quaternion = [interp1d(time, qxyzw_World_Device[:, i], fill_value="extrapolate") for i in range(qxyzw_World_Device.shape[1])]
+            # quaternion_gt = np.array([interp_func(t_end_us) for interp_func in interp_funcs_quaternion])
+            # quaternion_gt = quaternion_gt / np.linalg.norm(quaternion_gt)
+            # R_gt = Rotation.from_quat(quaternion_gt).as_matrix()  # bd -> world
+            # meas_gt = np.array([interp_func(t_end_us) for interp_func in interp_funcs]).reshape(3,-1)
+            # meas = meas_gt
+            # meas_cov = np.eye(3)
+            # #  use meas_gt #
             
         # filter update
         self.filter.update(meas, meas_cov, t_oldest_state_us, t_end_us)

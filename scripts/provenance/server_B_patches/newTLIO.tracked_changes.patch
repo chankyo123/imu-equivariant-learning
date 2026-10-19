@@ -1,0 +1,647 @@
+diff --git a/environment.yaml b/environment.yaml
+index 5b2f86c..42b5926 100644
+--- a/environment.yaml
++++ b/environment.yaml
+@@ -1,4 +1,4 @@
+-name: tlio
++name: tlio2
+ channels:
+   - pytorch
+   - pytorch3d
+diff --git a/src/batch_runner/filter_batch.py b/src/batch_runner/filter_batch.py
+index 38243be..3b53847 100644
+--- a/src/batch_runner/filter_batch.py
++++ b/src/batch_runner/filter_batch.py
+@@ -30,6 +30,12 @@ if __name__ == "__main__":
+         default=f"./all_output/",
+         help="Path to dataset directory",
+     )
++    debug_groups = parser.add_argument_group("debug")
++    debug_groups.add_argument(
++    "--use_const_cov",
++    action="store_true",
++    help="Whether to use constant measurement covariance",
++    )
+ 
+     args = parser.parse_args()
+ 
+@@ -55,6 +61,9 @@ if __name__ == "__main__":
+ 
+             model_param_path = str(base_folder) + "/parameters.json"
+             meascov_scale = 10
++            # meascov_scale = 1
++            # meascov_scale = 0.1
++            # meascov_scale = 0.01
+             command = [
+                 "python3",
+                 "main_filter.py",
+@@ -74,6 +83,8 @@ if __name__ == "__main__":
+                 "--update_freq",
+                 f"{update_frequency}",
+             ]
++            if args.use_const_cov:
++                command.append("--use_const_cov")
+             logging.info(" ".join(command))
+             try:
+                 sp.run(command)
+diff --git a/src/dataloader/memmapped_sequences_dataset.py b/src/dataloader/memmapped_sequences_dataset.py
+index ac3acb8..0f3b19d 100644
+--- a/src/dataloader/memmapped_sequences_dataset.py
++++ b/src/dataloader/memmapped_sequences_dataset.py
+@@ -292,7 +292,7 @@ class MemMappedSequencesDataset(Dataset, SequencesDataset):
+         start_idx = (self.genparams.window_size - 1) // 2
+         end = len(fp) - self.genparams.window_size//2
+         
+-        body_frame = False
++        body_frame = True
+         if body_frame:
+             traj = fp[start_idx:end:self.genparams.decimator,-10:] # [start:stop:step], [ qxyzw_World_Device, pos_World_Device, vel_Body]
+             # traj = fp[start_idx+self.genparams.window_size // 2:end+self.genparams.window_size // 2:self.genparams.decimator,-10:-3] # (velocity estimation, not displacement)
+diff --git a/src/network/ln_conv_2regress_nochannelmix_slope_1.py b/src/network/ln_conv_2regress_nochannelmix_slope_1.py
+index cccafaf..86ed559 100644
+--- a/src/network/ln_conv_2regress_nochannelmix_slope_1.py
++++ b/src/network/ln_conv_2regress_nochannelmix_slope_1.py
+@@ -330,8 +330,17 @@ class SO3EquivariantReluBracketLayers(nn.Module):
+                 block_type,
+                 in_dim, out_dim, 
+                 group_sizes,
+-                inter_dim, zero_init_residual=True):
++                inter_dim, zero_init_residual=True,
++                learn_alpha_beta=False, init_alpha=0.5, init_beta=1.0):
+         super(SO3EquivariantReluBracketLayers, self).__init__()
++
++        if learn_alpha_beta:
++            self.alpha = nn.Parameter(torch.tensor(init_alpha, dtype=torch.float32))
++            self.beta = nn.Parameter(torch.tensor(init_beta, dtype=torch.float32))
++        else:
++            self.register_buffer('alpha', torch.tensor(init_alpha, dtype=torch.float32))
++            self.register_buffer('beta', torch.tensor(init_beta, dtype=torch.float32))
++            
+         feat_dim = 1024
+         share_nonlinearity = False
+         leaky_relu = True
+@@ -370,6 +379,14 @@ class SO3EquivariantReluBracketLayers(nn.Module):
+         # self.fc_final = nn.Linear(feat_dim, 1, bias=False)
+         self._initialize(zero_init_residual)
+         
++    @property
++    def alpha_val(self):
++        return self.alpha if isinstance(self.alpha, float) else self.alpha.detach()
++
++    @property
++    def beta_val(self):
++        return self.beta if isinstance(self.beta, float) else self.beta.detach()
++    
+     def _make_residual_group1d(self, block, planes, group_size, stride=1):
+         downsample = None
+         # print(group_sizes[0],group_sizes[1],group_sizes[2],group_sizes[3])
+diff --git a/src/network/ln_cov_2regress_nochannelmix_bias.py b/src/network/ln_cov_2regress_nochannelmix_bias.py
+index 1ff9083..c25b367 100644
+--- a/src/network/ln_cov_2regress_nochannelmix_bias.py
++++ b/src/network/ln_cov_2regress_nochannelmix_bias.py
+@@ -332,8 +332,17 @@ class SO3EquivariantReluBracketLayers(nn.Module):
+                 block_type,
+                 in_dim, out_dim, 
+                 group_sizes,
+-                inter_dim, zero_init_residual=True):
++                inter_dim, zero_init_residual=True,
++                learn_alpha_beta=False, init_alpha=0.5, init_beta=1.0):
+         super(SO3EquivariantReluBracketLayers, self).__init__()
++
++        if learn_alpha_beta:
++            self.alpha = nn.Parameter(torch.tensor(init_alpha, dtype=torch.float32))
++            self.beta = nn.Parameter(torch.tensor(init_beta, dtype=torch.float32))
++        else:
++            self.register_buffer('alpha', torch.tensor(init_alpha, dtype=torch.float32))
++            self.register_buffer('beta', torch.tensor(init_beta, dtype=torch.float32))
++            
+         feat_dim = 1024
+         share_nonlinearity = False
+         leaky_relu = True
+@@ -371,7 +380,15 @@ class SO3EquivariantReluBracketLayers(nn.Module):
+         # self.ln_fc_bracket2 = LNLinearAndLieBracket(feat_dim, feat_dim,share_nonlinearity=share_nonlinearity, algebra_type='so3')
+         # self.fc_final = nn.Linear(feat_dim, 1, bias=False)
+         self._initialize(zero_init_residual)
+-        
++    
++    @property
++    def alpha_val(self):
++        return self.alpha if isinstance(self.alpha, float) else self.alpha.detach()
++
++    @property
++    def beta_val(self):
++        return self.beta if isinstance(self.beta, float) else self.beta.detach()
++    
+     def _make_residual_group1d(self, block, planes, group_size, stride=1):
+         downsample = None
+         # print(group_sizes[0],group_sizes[1],group_sizes[2],group_sizes[3])
+diff --git a/src/network/losses.py b/src/network/losses.py
+index 623c1f1..ba4b16b 100644
+--- a/src/network/losses.py
++++ b/src/network/losses.py
+@@ -115,7 +115,7 @@ def loss_distribution_from_skew_L(pred_mean: torch.Tensor,
+     pred_covariance_unregularized = torch.bmm(pred_L_skew, pred_L_skew.transpose(1, 2))
+     regularization_term = epsilon * torch.eye(D, device=pred_mean.device, dtype=pred_mean.dtype).unsqueeze(0)
+     pred_covariance = pred_covariance_unregularized + regularization_term # 형태: [N, D, D]
+-    pred_covariance = pred_covariance_unregularized# 형태: [N, D, D]
++    # pred_covariance = pred_covariance_unregularized# 형태: [N, D, D]
+ 
+     # --- 2단계: 각 축별 손실 계산을 위해 Sigma의 대각 성분(분산) 사용 ---
+     # pred_covariance의 대각 성분들이 각 축의 분산(sigma_d^2)에 해당한다고 가정합니다.
+@@ -147,6 +147,85 @@ def loss_distribution_from_skew_L(pred_mean: torch.Tensor,
+     # 필요하다면 추가: loss_per_axis = loss_per_axis + 0.5 * np.log(2 * np.pi)
+ 
+     return loss_per_axis
++
++def loss_distribution_from_skew_L_combined(pred, pred_logstd, targ, alpha=0.5, beta=1.0):
++    """
++    pred: predicted means, shape [B, ...]
++    pred_logstd: vector v from which covariance is built, shape [B, D]
++    targ: ground truth
++    alpha, beta: scalars for covariance construction
++
++    Returns:
++      N shape, N : Batch size
++    """
++
++    # v vector for covariance, shape [B, D]
++    v = pred_logstd  
++    # Outer product vv^T: [B, D, D]
++    vvT = torch.einsum('bi,bj->bij', v, v) 
++
++    # norm squared of v, shape [B, 1]
++    norm_v_sq = torch.sum(v ** 2, dim=1, keepdim=True)  
++
++    # Identity matrix [D, D], broadcasted to [B, D, D]
++    I = torch.eye(v.size(1), device=v.device).unsqueeze(0).expand(v.size(0), -1, -1)  
++
++    # Covariance matrix Σ
++    Sigma = alpha * vvT + beta * (norm_v_sq.unsqueeze(-1) * I - vvT)  
++
++    # Now compute your distribution loss, e.g. negative log likelihood
++    # For example (pseudo code, adapt based on your actual loss):
++    dist = torch.distributions.MultivariateNormal(pred, covariance_matrix=Sigma)
++    loss = -dist.log_prob(targ).mean()
++
++    return loss
++
++def loss_distribution_per_axis_from_skew_L(pred, pred_logstd, targ, alpha=0.5, beta=1.0):
++    """
++    Computes per-axis NLL loss given full covariance constructed from skewed v vector.
++    
++    Args:
++        pred: [B, 3] predicted mean
++        pred_logstd: [B, 3] vector used to construct covariance
++        targ: [B, 3] ground truth
++        alpha, beta: scalar weights for anisotropic vs isotropic terms
++    
++    Returns:
++        per_axis_loss: [B, 3] negative log-likelihood per axis
++    """
++    B, D = pred.shape
++    v = pred_logstd  # [B, 3]
++
++    # Construct full covariance matrix [B, 3, 3]
++    vvT = torch.einsum('bi,bj->bij', v, v)  # [B, 3, 3]
++    norm_v_sq = torch.sum(v ** 2, dim=1, keepdim=True)  # [B, 1]
++    I = torch.eye(D, device=v.device).unsqueeze(0).expand(B, -1, -1)  # [B, 3, 3]
++
++    Sigma = alpha * vvT + beta * (norm_v_sq.unsqueeze(-1) * I - vvT)  # [B, 3, 3]
++
++    # Cholesky for stability
++    dist = torch.distributions.MultivariateNormal(pred, covariance_matrix=Sigma)
++
++    # Log probability of full vector
++    log_probs = dist.log_prob(targ)  # [B]
++
++    # Compute Mahalanobis manually for per-axis contributions
++    # Δ = targ - pred
++    delta = targ - pred  # [B, 3]
++    Sigma_inv = torch.linalg.inv(Sigma)  # [B, 3, 3]
++
++    # Mahalanobis component-wise: [B, 3]
++    # Each axis i: loss_i = (delta * Sigma_inv * delta)[i]
++    axis_losses = torch.einsum('bi,bij,bj->b', delta, Sigma_inv, delta)  # [B] total Mahalanobis
++    total_logdet = torch.logdet(Sigma)  # [B]
++
++    # Full NLL = 0.5 * (Mahalanobis + log(det(Σ)) + D * log(2π))
++    # But we want **per-axis contribution**, so we decompose Mahalanobis
++    per_axis_loss = torch.einsum('bi,bij->bj', delta, Sigma_inv) * delta  # [B, 3]
++    per_axis_loss = 0.5 * per_axis_loss  # scale like NLL
++
++    return per_axis_loss  # shape: [B, 3]
++
+ """
+ Log Likelihood loss, with logstdariance (support full logstd)
+ (NOTE: output is Nx1)
+@@ -180,21 +259,29 @@ all variables on gpu
+ output:
+   loss: Nx3
+ """
+-def get_loss(pred, pred_logstd, targ, epoch):
++# def get_loss(pred, pred_logstd, targ, epoch):
++def get_loss(pred, pred_logstd, targ, epoch, alpha, beta):
+     """
+     if epoch < 10:
+         loss = loss_mse(pred, targ)
+     else:
+         loss = loss_distribution_diag(pred, pred_logstd, targ)
+     """
+-
+-    # if epoch < 10:
+-    if epoch < 20:
+-        pred_logstd = pred_logstd.detach()
+-    # print(pred_logstd[0])
++    if epoch < 10:
++    # if epoch < 100:
++      loss = loss_mse(pred, targ)
++      loss= loss.mean()
++    # if epoch < 20:
++    #     pred_logstd = pred_logstd.detach()
++    # # print(pred_logstd[0])
++    # # loss = loss_mse(pred, targ)
++    # # pred_logstd = pred_logstd.detach()
++    # # loss = loss_distribution_diag(pred, pred_logstd, targ)
++    # # loss = loss_distribution_diag(pred, pred_logstd[:,:,0], targ)
++    else:
++      loss = loss_distribution_from_skew_L_combined(pred, pred_logstd, targ, alpha, beta)  #scalar ()
++      # loss = loss_distribution_per_axis_from_skew_L(pred, pred_logstd, targ, alpha, beta)   # (N,3)
++      # loss = loss_distribution_from_skew_L(pred, pred_logstd, targ)
+     # loss = loss_mse(pred, targ)
+-    # pred_logstd = pred_logstd.detach()
+-    # loss = loss_distribution_diag(pred, pred_logstd, targ)
+-    # loss = loss_distribution_diag(pred, pred_logstd[:,:,0], targ)
+-    loss = loss_distribution_from_skew_L(pred, pred_logstd, targ)
++    
+     return loss
+diff --git a/src/network/model_factory.py b/src/network/model_factory.py
+index 43de937..7f8571e 100644
+--- a/src/network/model_factory.py
++++ b/src/network/model_factory.py
+@@ -12,7 +12,8 @@ from network.model_resnet import BasicBlock1D, ResNet1D
+ # from network.ln_se_conv_2regress_chmix_bias import LN_BasicBlock1D, SO3EquivariantReluBracketLayers    #6D or 9D
+ 
+ # from network.ln_conv_2regress_nochannelmix_bias_avgpool import LN_BasicBlock1D, SO3EquivariantReluBracketLayers    #6D or 9D
+-from network.ln_cov_2regress_nochannelmix_bias import LN_BasicBlock1D, SO3EquivariantReluBracketLayers    #6D or 9D
++# from network.ln_cov_2regress_nochannelmix_bias import LN_BasicBlock1D, SO3EquivariantReluBracketLayers    #6D or 9D
++from network.ln_conv_2regress_nochannelmix_slope_1 import LN_BasicBlock1D, SO3EquivariantReluBracketLayers    #6D or 9D
+ 
+ from network.model_resnet_seq import ResNetSeq1D
+ from network.model_tcn import TlioTcn
+@@ -28,8 +29,12 @@ def get_model(arch, net_config, input_dim=6, output_dim=3):
+                 LN_BasicBlock1D,
+                 input_dim, output_dim, 
+                 [2, 2, 2, 2],
+-                # [3, 3, 3, 3],
+-                net_config["in_dim"]
++                # [4, 4, 4, 4],
++                net_config["in_dim"],
++                # learn_alpha_beta=False,
++                # init_alpha=1.0, init_beta=0.1
++                learn_alpha_beta=True,
++                init_alpha=0.5, init_beta=1.0
+             )
+         # network = VN_ResNet1D(
+         #     VN_BasicBlock1D, input_dim, output_dim, [2, 2, 2, 2], net_config["in_dim"], True
+diff --git a/src/network/test.py b/src/network/test.py
+index a623acf..ad8976d 100644
+--- a/src/network/test.py
++++ b/src/network/test.py
+@@ -17,9 +17,10 @@ from scipy.interpolate import interp1d
+ from scipy.spatial.transform import Rotation
+ from torch.utils.data import DataLoader
+ from utils.dotdict import dotdict
+-from utils.utils import to_device
+ from utils.logging import logging
+ from utils.math_utils import *
++from utils.utils import to_device, embed_imu_to_so3, vec_2_so3_cov
++from models.lie_alg_util import vee
+ 
+ 
+ def compute_rpe(rpe_ns, ps, ps_gt, yaw, yaw_gt):
+@@ -186,15 +187,27 @@ def compute_metrics_and_plotting(args, net_attr_dict, traj_attr_dict):
+     metrics["ronin"]["mse_loss_y"] = float(mse_loss[1])
+     metrics["ronin"]["mse_loss_z"] = float(mse_loss[2])
+     metrics["ronin"]["mse_loss_avg"] = float(avg_mse_loss)
+-    metrics["ronin"]["likelihood_loss_x"] = float(likelihood_loss[0])
+-    metrics["ronin"]["likelihood_loss_y"] = float(likelihood_loss[1])
+-    metrics["ronin"]["likelihood_loss_z"] = float(likelihood_loss[2])
++    metrics["ronin"]["likelihood_loss_x"] = float(likelihood_loss)
++    metrics["ronin"]["likelihood_loss_y"] = float(likelihood_loss)
++    metrics["ronin"]["likelihood_loss_z"] = float(likelihood_loss)
++    # metrics["ronin"]["likelihood_loss_x"] = float(likelihood_loss[0])
++    # metrics["ronin"]["likelihood_loss_y"] = float(likelihood_loss[1])
++    # metrics["ronin"]["likelihood_loss_z"] = float(likelihood_loss[2])
+     metrics["ronin"]["likelihood_loss_avg"] = float(avg_likelihood_loss)
+ 
+     """ ------------ Data for plotting ----------- """
+     total_pred = net_attr_dict["preds"].shape[0]
+     pred_ts = (1.0 / args.sample_freq) * np.arange(total_pred)
++    # pred_sigmas = np.exp(net_attr_dict["preds_cov"])
+     pred_sigmas = np.exp(net_attr_dict["preds_cov"])
++    v = torch.tensor(net_attr_dict["preds_cov"])  # ensure it's a torch tensor
++    vvT = torch.einsum('bi,bj->bij', v, v)                     # [B, 3, 3]
++    norm_v_sq = torch.sum(v ** 2, dim=1, keepdim=True)         # [B, 1]
++    B, D = v.shape
++    I = torch.eye(D, device=v.device).unsqueeze(0).expand(B, -1, -1)  # [B, 3, 3]
++    Sigma = 0.5 * vvT + 1 * (norm_v_sq.unsqueeze(-1) * I - vvT)  # [B, 3, 3]
++    pred_sigmas_diag = Sigma.diagonal(offset=0, dim1=1, dim2=2)  # shape: [B, 3]
++    pred_sigmas = pred_sigmas_diag.detach().cpu().numpy()
+     plot_dict = {
+         "ts": ts,
+         "pos_pred": pos_pred,
+@@ -461,11 +474,20 @@ def get_inference(network, data_loader, device, epoch):
+         sample = to_device(sample, device)
+         feat = sample["feats"]["imu0"]
+         
++        # ## 1. cov estimation using lie neuron ##
++        # feat_embed = embed_imu_to_so3(feat) #[1024, 6, 600] -> [1024, 2, 3, 3, 600]
++        # vee_input = vee(feat_embed.permute(0,1,4,2,3), algebra_type='gl3').permute(0,3,1,2)  # [1024, 9, 2, 600]
++        # pred, pred_cov= network(vee_input.reshape(-1, vee_input.size(2), vee_input.size(3)))  # [1024*9, 2, 600]
++        # # pred_cov = vec_2_so3_cov(pred_cov)
++        # ## 1. cov estimation using lie neuron ##
++        
++        ## 0. normal feature ##
+         pred, pred_cov = network(feat)
++
+         targ_vel =torch.zeros_like(pred)
+ 
+-        # targ = sample["targ_dt_World"][:,-1,:]
+-        targ = sample["vel_World"][:,-1,:]
++        targ = sample["targ_dt_World"][:,-1,:]
++        # targ = sample["vel_World"][:,-1,:]
+         # targ = sample["targ_dt_Body"][:,-1,:]
+         # Only grab the last prediction in this case
+         if len(pred.shape) == 3:
+@@ -473,7 +495,10 @@ def get_inference(network, data_loader, device, epoch):
+             pred_cov = pred_cov[:,:,-1]
+         
+         assert len(pred.shape) == 2
+-        loss = get_loss(pred, pred_cov, targ, epoch)
++        # loss = get_loss(pred, pred_cov, targ, epoch)
++        loss = get_loss(pred, pred_cov, targ, epoch, network.alpha_val, network.beta_val)
++
++        # pred_cov = pred_cov.diagonal(dim1=-2, dim2=-1)  # shape: (n, 3)
+ 
+         targets_all.append(torch_to_numpy(targ))
+         preds_all.append(torch_to_numpy(pred))
+@@ -485,6 +510,7 @@ def get_inference(network, data_loader, device, epoch):
+     targets_all = np.concatenate(targets_all, axis=0)
+     preds_all = np.concatenate(preds_all, axis=0)
+     preds_cov_all = np.concatenate(preds_cov_all, axis=0)
++    losses_all = [np.array([loss]) for loss in losses_all]
+     losses_all = np.concatenate(losses_all, axis=0)
+     targets_vel_all = np.concatenate(targets_vel_all, axis=0)
+     preds_vel_all = np.concatenate(preds_vel_all, axis=0)
+diff --git a/src/network/train.py b/src/network/train.py
+index 3a5b862..63b6de6 100644
+--- a/src/network/train.py
++++ b/src/network/train.py
+@@ -40,15 +40,15 @@ def get_inference(network, data_loader, device, epoch, transforms=[]):
+         for transform in transforms:
+             sample = transform(sample)
+         feat = sample["feats"]["imu0"]
+-        ## 1. cov estimation using lie neuron ##
+-        feat_embed = embed_imu_to_so3(feat) #[1024, 6, 600] -> [1024, 2, 3, 3, 600]
+-        vee_input = vee(feat_embed.permute(0,1,4,2,3), algebra_type='gl3').permute(0,3,1,2)  # [1024, 9, 2, 600]
+-        pred, pred_cov= network(vee_input.reshape(-1, vee_input.size(2), vee_input.size(3)))  # [1024*9, 2, 600]
+-        # pred_cov = vec_2_so3_cov(pred_cov)
+-        ## 1. cov estimation using lie neuron ##
++        # ## 1. cov estimation using lie neuron ##
++        # feat_embed = embed_imu_to_so3(feat) #[1024, 6, 600] -> [1024, 2, 3, 3, 600]
++        # vee_input = vee(feat_embed.permute(0,1,4,2,3), algebra_type='gl3').permute(0,3,1,2)  # [1024, 9, 2, 600]
++        # pred, pred_cov= network(vee_input.reshape(-1, vee_input.size(2), vee_input.size(3)))  # [1024*9, 2, 600]
++        # # pred_cov = vec_2_so3_cov(pred_cov)
++        # ## 1. cov estimation using lie neuron ##
+         
+         ## 0. normal feature ##
+-        # pred, pred_cov = network(feat)
++        pred, pred_cov = network(feat)
+         
+         if len(pred.shape) == 2:
+             targ = sample["targ_dt_World"][:,-1,:]
+@@ -58,7 +58,8 @@ def get_inference(network, data_loader, device, epoch, transforms=[]):
+             # Leave off zeroth element since it's 0's. Ex: Net predicts 199 if there's 200 GT
+             targ = sample["targ_dt_World"][:,1:,:].permute(0,2,1)
+ 
+-        loss = get_loss(pred, pred_cov, targ, epoch)
++        # loss = get_loss(pred, pred_cov, targ, epoch)
++        loss = get_loss(pred, pred_cov, targ, epoch, network.alpha_val, network.beta_val)
+ 
+         targets_all.append(torch_to_numpy(targ))
+         preds_all.append(torch_to_numpy(pred))
+@@ -68,6 +69,7 @@ def get_inference(network, data_loader, device, epoch, transforms=[]):
+     targets_all = np.concatenate(targets_all, axis=0)
+     preds_all = np.concatenate(preds_all, axis=0)
+     preds_cov_all = np.concatenate(preds_cov_all, axis=0)
++    # losses_all = [np.array([loss]) for loss in losses_all]
+     losses_all = np.concatenate(losses_all, axis=0)
+     attr_dict = {
+         "targets": targets_all,
+@@ -93,15 +95,15 @@ def do_train(network, train_loader, device, epoch, optimizer, transforms=[]):
+             sample = transform(sample)
+         feat = sample["feats"]["imu0"]
+         optimizer.zero_grad()
+-        ## 1. cov estimation using lie neuron ##
+-        feat_embed = embed_imu_to_so3(feat) #[1024, 6, 600] -> [1024, 2, 3, 3, 600]
+-        vee_input = vee(feat_embed.permute(0,1,4,2,3), algebra_type='gl3').permute(0,3,1,2)  # [1024, 9, 2, 600]
+-        pred, pred_cov= network(vee_input.reshape(-1, vee_input.size(2), vee_input.size(3)))  # [1024*9, 2, 600]
+-        # pred_cov = vec_2_so3_cov(pred_cov)
+-        ## 1. cov estimation using lie neuron ##
++        # ## 1. cov estimation using lie neuron ##
++        # feat_embed = embed_imu_to_so3(feat) #[1024, 6, 600] -> [1024, 2, 3, 3, 600]
++        # vee_input = vee(feat_embed.permute(0,1,4,2,3), algebra_type='gl3').permute(0,3,1,2)  # [1024, 9, 2, 600]
++        # pred, pred_cov= network(vee_input.reshape(-1, vee_input.size(2), vee_input.size(3)))  # [1024*9, 2, 600]
++        # # pred_cov = vec_2_so3_cov(pred_cov)
++        # ## 1. cov estimation using lie neuron ##
+         
+         ## 0. normal feature ##
+-        # pred, pred_cov = network(feat)
++        pred, pred_cov = network(feat)
+ 
+         if len(pred.shape) == 2:
+             targ = sample["targ_dt_World"][:,-1,:]
+@@ -111,7 +113,9 @@ def do_train(network, train_loader, device, epoch, optimizer, transforms=[]):
+             # Leave off zeroth element since it's 0's. Ex: Net predicts 199 if there's 200 GT
+             targ = sample["targ_dt_World"][:,1:,:].permute(0,2,1)
+ 
+-        loss = get_loss(pred, pred_cov, targ, epoch)
++        # loss = get_loss(pred, pred_cov, targ, epoch)
++        loss = get_loss(pred, pred_cov, targ, epoch, network.alpha_val, network.beta_val)
++
+ 
+         train_targets.append(torch_to_numpy(targ))
+         train_preds.append(torch_to_numpy(pred))
+@@ -136,6 +140,7 @@ def do_train(network, train_loader, device, epoch, optimizer, transforms=[]):
+     train_targets = np.concatenate(train_targets, axis=0)
+     train_preds = np.concatenate(train_preds, axis=0)
+     train_preds_cov = np.concatenate(train_preds_cov, axis=0)
++    # train_losses = [np.array([loss]) for loss in train_losses]
+     train_losses = np.concatenate(train_losses, axis=0)
+     train_attr_dict = {
+         "targets": train_targets,
+@@ -146,7 +151,7 @@ def do_train(network, train_loader, device, epoch, optimizer, transforms=[]):
+     return train_attr_dict
+ 
+ 
+-def write_summary(summary_writer, attr_dict, epoch, optimizer, mode):
++def write_summary(summary_writer, attr_dict, epoch, optimizer, mode, model):
+     """ Given the attr_dict write summary and log the losses """
+ 
+     mse_loss = np.mean((attr_dict["targets"] - attr_dict["preds"]) ** 2, axis=0)
+@@ -163,6 +168,8 @@ def write_summary(summary_writer, attr_dict, epoch, optimizer, mode):
+     summary_writer.add_scalar(f"{mode}_loss/loss_z", mse_loss[2], epoch)
+     summary_writer.add_scalar(f"{mode}_loss/avg", np.mean(mse_loss), epoch)
+     summary_writer.add_scalar(f"{mode}_dist/loss_full", ml_loss, epoch)
++    summary_writer.add_scalar('alpha', model.alpha.item(), epoch)
++    summary_writer.add_scalar('beta', model.beta.item(), epoch)
+     summary_writer.add_histogram(f"{mode}_hist/sigma_x", sigmas[:, 0], epoch)
+     summary_writer.add_histogram(f"{mode}_hist/sigma_y", sigmas[:, 1], epoch)
+     summary_writer.add_histogram(f"{mode}_hist/sigma_z", sigmas[:, 2], epoch)
+@@ -352,7 +359,18 @@ def net_train(args):
+     logging.info(f'Network "{args.arch}" loaded to device {device}')
+     logging.info(f"Total number of parameters: {total_params}")
+ 
+-    optimizer = torch.optim.Adam(network.parameters(), args.lr)
++    # optimizer = torch.optim.Adam(network.parameters(), args.lr)
++    # True / False for training alpha/beta
++    train_alpha_beta = True
++    if train_alpha_beta:
++        network.alpha.requires_grad = True
++        network.beta.requires_grad = True
++    else:
++        network.alpha.requires_grad = False
++        network.beta.requires_grad = False
++    optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, network.parameters()), lr=1e-3)
++    print(f"Alpha trainable? {getattr(network.alpha, 'requires_grad', False)}")
++    print(f"Beta trainable? {getattr(network.beta, 'requires_grad', False)}")
+     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+         optimizer, factor=0.1, patience=10, verbose=True, eps=1e-12
+     )
+@@ -406,13 +424,13 @@ def net_train(args):
+         logging.info(f"-------------- Training, Epoch {epoch} ---------------")
+         start_t = time.time()
+         train_attr_dict = do_train(network, train_loader, device, epoch, optimizer, train_transforms)
+-        write_summary(summary_writer, train_attr_dict, epoch, optimizer, "train")
++        write_summary(summary_writer, train_attr_dict, epoch, optimizer, "train", network) #add network argument to save alpha and beta
+         end_t = time.time()
+         logging.info(f"time usage: {end_t - start_t:.3f}s")
+ 
+         if val_loader is not None:
+             val_attr_dict = get_inference(network, val_loader, device, epoch)
+-            write_summary(summary_writer, val_attr_dict, epoch, optimizer, "val")
++            write_summary(summary_writer, val_attr_dict, epoch, optimizer, "val", network)
+             if np.mean(val_attr_dict["losses"]) < best_val_loss:
+                 best_val_loss = np.mean(val_attr_dict["losses"])
+                 save_model(args, epoch, network, optimizer, best=True)
+@@ -422,6 +440,7 @@ def net_train(args):
+         
+         # if epoch in {8,9,19,49, 80, 90, 95, 96, 98, 99, 109, 119, 129, 149, 159, 179, 189, 195, 199, 299, 399}:
+         if epoch in {8,9,19,29,39,49,59,69, 80, 90, 95, 96, 98, 99, 109, 119, 129, 149, 159, 179, 189, 195, 199, 249, 290, 299, 390, 399}:
++            print(f"Epoch {epoch}: alpha = {network.alpha.item()}, beta = {network.beta.item()}")
+             save_model(args, epoch, network, optimizer, best=False, interrupt=False)
+ 
+     logging.info("Training complete.")
+diff --git a/src/tracker/imu_tracker.py b/src/tracker/imu_tracker.py
+index f5df535..bfe68d7 100644
+--- a/src/tracker/imu_tracker.py
++++ b/src/tracker/imu_tracker.py
+@@ -213,16 +213,16 @@ class ImuTracker:
+ 
+     def _compensate_measurement_with_initial_calibration(self, gyr_raw, acc_raw):
+         if self.icalib:
+-            # #logging.info("Using bias from initial calibration")
+-            # init_ba = self.icalib.accelBias
+-            # init_bg = self.icalib.gyroBias
+-            # # calibrate raw imu data
+-            # acc_biascpst, gyr_biascpst = self.icalib.calibrate_raw(
+-            #     acc_raw, gyr_raw
+-            # )  # removed offline bias and scaled
+-            init_ba = np.zeros((3, 1))
+-            init_bg = np.zeros((3, 1))
+-            acc_biascpst, gyr_biascpst = acc_raw, gyr_raw
++            #logging.info("Using bias from initial calibration")
++            init_ba = self.icalib.accelBias
++            init_bg = self.icalib.gyroBias
++            # calibrate raw imu data
++            acc_biascpst, gyr_biascpst = self.icalib.calibrate_raw(
++                acc_raw, gyr_raw
++            )  # removed offline bias and scaled
++            # init_ba = np.zeros((3, 1))
++            # init_bg = np.zeros((3, 1))
++            # acc_biascpst, gyr_biascpst = acc_raw, gyr_raw
+         else:
+             #logging.info("Using zero bias")
+             init_ba = np.zeros((3, 1))
+@@ -289,21 +289,21 @@ class ImuTracker:
+ 
+         # Eventually calibrate
+         if self.icalib:
+-            # # calibrate raw imu data with offline calibation
+-            # # this is used for network feeding
+-            # acc_biascpst, gyr_biascpst = self.icalib.calibrate_raw(
+-            #     acc_raw, gyr_raw
+-            # )  # removed offline bias and scaled
+-
+-            # # calibrate raw imu data with offline calibation scale
+-            # # this is used for the filter. By not applying offline bias
+-            # # we expect the filter to estimate bias similar to the offline
+-            # # calibrated one
+-            # acc_raw, gyr_raw = self.icalib.scale_raw(
+-            #     acc_raw, gyr_raw
+-            # )  # only offline scaled - into the filter
+-            acc_biascpst = acc_raw
+-            gyr_biascpst = gyr_raw
++            # calibrate raw imu data with offline calibation
++            # this is used for network feeding
++            acc_biascpst, gyr_biascpst = self.icalib.calibrate_raw(
++                acc_raw, gyr_raw
++            )  # removed offline bias and scaled
++
++            # calibrate raw imu data with offline calibation scale
++            # this is used for the filter. By not applying offline bias
++            # we expect the filter to estimate bias similar to the offline
++            # calibrated one
++            acc_raw, gyr_raw = self.icalib.scale_raw(
++                acc_raw, gyr_raw
++            )  # only offline scaled - into the filter
++            # acc_biascpst = acc_raw
++            # gyr_biascpst = gyr_raw
+         else:
+             acc_biascpst = acc_raw
+             gyr_biascpst = gyr_raw
+@@ -328,7 +328,9 @@ class ImuTracker:
+             self._add_interpolated_imu_to_buffer(acc_biascpst, gyr_biascpst, t_us)
+             
+         if "so3" in self.vio_path:
+-            rotation_info = np.load("./../../imu-equivariant-learning/so3_local_data_bodyframe2/rpy_values.npy")
++            # rotation_info = np.load("./../../imu-equivariant-learning/so3_local_data_bodyframe2/rpy_values.npy")
++            rotation_info = np.load("./../../imu-equivariant-learning/local_data/so3_60/rpy_values.npy")
++            # rotation_info = np.load("./../../imu-equivariant-learning/local_data/so3_60_again/rpy_values.npy")
+             rotation_rpy = rotation_info[i,:]
+             m_b2bprime = Rotation.from_euler('xyz', rotation_rpy, degrees=False).as_matrix()
+         else:
+diff --git a/src/tracker/meas_source_torchscript.py b/src/tracker/meas_source_torchscript.py
+index a25d6ca..9f7462a 100644
+--- a/src/tracker/meas_source_torchscript.py
++++ b/src/tracker/meas_source_torchscript.py
+@@ -51,8 +51,19 @@ class MeasSourceTorchScript:
+             assert meas_cov.dim() == 2
+ 
+             meas = meas.cpu().detach().numpy()
++            
+             meas_cov[meas_cov < -4] = -4  # exp(-3) =~ 0.05
+             meas_cov = DiagonalParam.vec2Cov(meas_cov).cpu().detach().numpy()[0, :, :]
++            # v = meas_cov  # shape: [B, 3]
++            # alpha, beta = 0.5, 1.0 
++
++            # vvT = torch.einsum('bi,bj->bij', v, v)  # [B, 3, 3]
++            # norm_v_sq = torch.sum(v ** 2, dim=1, keepdim=True)  # [B, 1]
++            # I = torch.eye(v.size(1), device=v.device).unsqueeze(0).expand(v.size(0), -1, -1)  # [B, 3, 3]
++
++            # meas_cov = alpha * vvT + beta * (norm_v_sq.unsqueeze(-1) * I - vvT)  # [B, 3, 3]
++            # meas_cov = meas_cov.cpu().detach().numpy()[0]  # [3, 3] if B == 1
++            
+             meas = meas.reshape((3, 1))
+ 
+             # Our equivalent of zero position update (TODO need stronger prior to keep it still)

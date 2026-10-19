@@ -1,0 +1,82 @@
+{
+  "ResNet": {
+    "n_seqs": 17,
+    "ATE_umeyama_mean": 0.6455,
+    "ATE_umeyama_median": 0.6438,
+    "ATE_meanL2_mean": 0.8914,
+    "ATE_meanL2_median": 0.901,
+    "RMSE_no_align_mean": 0.9853,
+    "RPE_2s_mean": 0.8671,
+    "drift_endpoint_mean": 0.061
+  },
+  "ln_resnet_LFA_MSE": {
+    "n_seqs": 17,
+    "ATE_umeyama_mean": 0.9092,
+    "ATE_umeyama_median": 0.8412,
+    "ATE_meanL2_mean": 1.4363,
+    "ATE_meanL2_median": 1.2185,
+    "RMSE_no_align_mean": 1.6093,
+    "RPE_2s_mean": 0.9072,
+    "drift_endpoint_mean": 0.1267
+  },
+  "ln_resnet_LFA_NLL": {
+    "n_seqs": 17,
+    "ATE_umeyama_mean": 1.0435,
+    "ATE_umeyama_median": 0.8429,
+    "ATE_meanL2_mean": 1.7134,
+    "ATE_meanL2_median": 1.2635,
+    "RMSE_no_align_mean": 1.9294,
+    "RPE_2s_mean": 0.9183,
+    "drift_endpoint_mean": 0.1619
+  },
+  "ln_resnet_chol_LFA_NLL": {
+    "n_seqs": 17,
+    "ATE_umeyama_mean": 0.837,
+    "ATE_umeyama_median": 0.7027,
+    "ATE_meanL2_mean": 1.1802,
+    "ATE_meanL2_median": 1.0519,
+    "RMSE_no_align_mean": 1.33,
+    "RPE_2s_mean": 0.9307,
+    "drift_endpoint_mean": 0.1056
+  },
+  "ln_resnet_chol_LFA_MSE": {
+    "n_seqs": 17,
+    "ATE_umeyama_mean": 0.7887,
+    "ATE_umeyama_median": 0.6166,
+    "ATE_meanL2_mean": 1.0909,
+    "ATE_meanL2_median": 0.8673,
+    "RMSE_no_align_mean": 1.2278,
+    "RPE_2s_mean": 0.9109,
+    "drift_endpoint_mean": 0.0865
+  },
+  "ln_resnet_nolfa_t119_ablation_only": {
+    "n_seqs": 17,
+    "ATE_umeyama_mean": 0.5805,
+    "ATE_umeyama_median": 0.5592,
+    "ATE_meanL2_mean": 0.7525,
+    "ATE_meanL2_median": 0.6525,
+    "RMSE_no_align_mean": 0.8428,
+    "RPE_2s_mean": 0.7506,
+    "drift_endpoint_mean": 0.0642
+  },
+  "EqNIO_O2": {
+    "n_seqs": 17,
+    "ATE_umeyama_mean": 0.8282,
+    "ATE_umeyama_median": 0.6719,
+    "ATE_meanL2_mean": 1.1779,
+    "ATE_meanL2_median": 0.8575,
+    "RMSE_no_align_mean": 1.3757,
+    "RPE_2s_mean": 0.4822,
+    "drift_endpoint_mean": 0.0567
+  },
+  "AirIO": {
+    "n_seqs": 17,
+    "ATE_umeyama_mean": 1.1289,
+    "ATE_umeyama_median": 1.0494,
+    "ATE_meanL2_mean": 2.0172,
+    "ATE_meanL2_median": 2.1084,
+    "RMSE_no_align_mean": 2.2434,
+    "RPE_2s_mean": 0.4663,
+    "drift_endpoint_mean": 0.195
+  }
+}

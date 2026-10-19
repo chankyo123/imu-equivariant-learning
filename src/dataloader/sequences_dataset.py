@@ -418,8 +418,8 @@ class SequencesDataset:
                 targ_dt_World = targ_dt_World.reshape(-1, 3)
                 # print('check targdt and vel : ', targ_dt_World[0,:] - vel[0,:])
         
-            align_last_imu = True
-            # align_last_imu = False
+            # Disable LFA if path contains "nolfa" — useful for non-equivariant baselines on body frame
+            align_last_imu = ("nolfa" not in self.data_path)
             align_first_imu = False
             
             if align_last_imu and align_first_imu:
@@ -447,6 +447,7 @@ class SequencesDataset:
                     #only align acceleration
                     # print(feats[k][3:].shape) #3*200
                     if align_last_imu:
+                        feats[k][:3] = np.einsum("tij,jt->it", R_n_last, feats[k][:3]) # also LFA the gyro in the last IMU frame
                         feats[k][3:6] = np.einsum("tij,jt->it", R_n_last, feats[k][3:6])
                         if feats[k].shape[0] == 9:
                             feats[k][6:9] = np.einsum("tij,jt->it", R_n_last, feats[k][6:9])

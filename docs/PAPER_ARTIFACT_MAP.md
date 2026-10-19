@@ -1,0 +1,188 @@
+# Paper-to-artifact map (GINIO, CoRL 2026 camera-ready)
+
+Rendered from `docs/PAPER_ARTIFACT_MAP.csv` (one row per paper cell or figure). Table and figure numbers follow the **camera-ready** PDF (camera-ready Table 8 = submission Table 9 covariance ablation; camera-ready Table 9 = submission Table 10 frame-estimation mismatch; camera-ready Tables 10-12 = Fetch). `release_folder` refers to `checkpoints/<folder>/` as listed in `checkpoints/MANIFEST.md`; folders whose MANIFEST status carries `NOT_IN_V1.0` are documented and verified but are not in the `v1.0-corl2026` release assets. Evidence paths starting with `results/`, `scripts/`, `code/` are inside the Server B handoff bundle (`paper_results.tar.gz` carries the result files); paths starting with `Server A` are from the AWS box.
+
+## Legend
+
+| status | meaning |
+|---|---|
+| PINNED | checkpoint released and the printed number reproduces from stored outputs |
+| CKPT_ONLY | checkpoint released, but the printed number does not reproduce from any stored output; the recomputed value is given |
+| RETRAIN | the original model is lost; a retrained model is released and its own value is given |
+| LEDGER_ONLY | the number survives only as a comment in an analysis script (`results/ledger_comments/`); checkpoint and outputs were deleted |
+| PROJECTED | the generating script itself labels the values projected or smoothed; no measurement |
+| UNSUPPORTED | a printed number for which no measured source exists; the measured values that do exist are given |
+| AGGREGATE_ONLY | reproduces from a stored aggregate, but the checkpoint cannot be loaded strictly |
+| ABSENT | nothing on either machine |
+| PARTIAL / INCONSISTENT / NOT_REPRODUCIBLE_HERE | as described in the notes |
+
+Two machines: **Server A** = AWS `ip-10-150-0-126:~/imu-work` (NanoBench AirIO family, covariance ablation, GINIO-E); **Server B** = the authors' Alienware workstation (`imu-previous-work/`; TLIO, RIDI, Lie-Neuron NanoBench runs, EqNIO and ResNet baselines).
+
+
+## Table 1
+
+| paper item | cell | printed | status | release folder | checkpoint file | evidence | measured | on | notes |
+|---|---|---|---|---|---|---|---|---|---|
+| Table 1 / Table 5 | TLIO ResNet+SCEKF ID/ID | 1.725 | RETRAIN | tlio_resnet_scekf_retrain2026 | checkpoint_best.pt 653f34e1c3a0e82e; model_torchscript.pt ed39d955462df276 | results/ledger_comments/imu-equivariant-learning_json_analysis.py:23 ('#1.7251'); results/recomputed_2026-10/RECOMPUTED_FILTER_METRICS.csv row TLIO/batch_filter_outputs_uf20/models-resnet | 1.7459 (EqNIO-metric) / 1.7517 (TLIO-metric) with the 2026-03 retrain | Server B | original checkpoint and outputs overwritten by the 2026-03-16 retrain; 1.7251 survives only as a ledger comment |
+| Table 1 / Table 5 | TLIO ResNet+SCEKF ID/SO(3) | 35.699 | ABSENT | - | - | - | - | Server B | no output, aggregate or ledger comment anywhere |
+| Table 1 / Table 5 | TLIO ResNet+SCEKF+SO(3) aug. ID/ID | 1.844 | CKPT_ONLY | tlio_resnet_so3aug | checkpoint_best.pt a70098a6f0a5c0a2; model_torchscript.pt 2fbb207f07f4967c | RECOMPUTED_FILTER_METRICS.csv row EqNIO/models/resnet_so3aug_eqnio_filter_std | 1.8420 (EqNIO-metric) / 1.8499 (TLIO-metric) | Server B | near but not exact; parameters.json records no augmentation flag |
+| Table 1 / Table 5 | TLIO ResNet+SCEKF+SO(3) aug. ID/SO(3) | 8.687 | CKPT_ONLY | tlio_resnet_so3aug | as above | RECOMPUTED_FILTER_METRICS.csv row EqNIO/results/resnet_so3aug_so3_60_no_grav (GT imu-previous-work/so3_60) | 8.4249 | Server B | Table 5 prints RTE 0.565 for this row, identical to the ResNet row |
+| Table 1 / Table 5 | TLIO EqNIO ID/ID | 1.554 | PINNED | tlio_eqnio_o2 | checkpoint_best.pt 26e6e3ad879f5cfb (epoch 24) | results/eqnio_csv/TLIO_o2_ekf_results.csv; RECOMPUTED row EqNIO/models/tlio_o2/TLIO_o2/ekf_test | 1.5545 (EqNIO-metric RMSE); 1.5651 with the TLIO-metric | Server B | trap: EqNIO/models/tlio_o2/checkpoint_best.pt (epoch 71) is a different checkpoint giving 1.574 |
+| Table 1 / Table 5 | TLIO EqNIO ID/SO(3) | 76.389 | PINNED | tlio_eqnio_o2 | as above | results/eqnio_csv/TLIO_o2_so3_60_nograv.csv; RECOMPUTED row EqNIO/results/TLIO_o2_so3_60_nograv (GT imu-previous-work/so3_60) | 76.3895 | Server B | rotated so3_60 data, no filter-init compensation, scored vs rotated GT; only the imu-previous-work/so3_60 copy reproduces (77.43 vs tlio_golden GT) |
+| Table 1 / Table 5 | TLIO GINIO-W ID/ID | 1.615 | PINNED | tlio_ginio_w_ln189 | checkpoint_189.pt 6c0c4a9e531f3aeb = model_torchscript.pt 2c4f171fc7ed1afa (epoch 189) | RECOMPUTED row imu-equivariant-learning/batch_filter_outputs_uf20/ln_conv_2regress_nochannelmix_bias_world_disp_mle_189 | 1.6146 (TLIO-metric) / 1.6140 (EqNIO-metric) | Server B | checkpoint_best.pt in the same folder is epoch 86 = different weights (WEIGHTS.txt) |
+| Table 1 / Table 5 | TLIO GINIO-W ID/SO(3) | 2.018 | CKPT_ONLY | tlio_ginio_w_ln189 | checkpoint_best.pt 5785386fe4d5b58a (epoch 86) | results/eqnio_csv/ln_189_so3_60_2.csv; RECOMPUTED row EqNIO/results/ln_189_so3_60 (GT imu-previous-work/so3_60) | 2.2052 | Server B | run used the epoch-86 weights, unlike the ID/ID cell; 2.018 not reproduced |
+| Table 1 / Table 5 / Table 7 | TLIO ResNet-S+InEKF ID/ID, ID/SO(3) | 2.814 / 36.593 | CKPT_ONLY | tlio_resnet_s_lfa_candidate | checkpoint_best.pt 571f12e42c6d37ca; model_torchscript.pt 0e0123a07aae8b3d | RECOMPUTED rows imu-equivariant-learning/batch_filter_outputs_body_riekf_uf20/models_body-lfa_resnet_gyrofix and ..._so3_uf20/... (35 seqs) | 2.8761 / 16.15 (tlio_golden GT) or 12.76 (local_data_bodyframe/so3_60 GT) | Server B | only candidate checkpoint; no ledger entry links it to the printed numbers |
+| Table 1 / Table 5 / Table 7 | TLIO GINIO-S ID/ID, ID/SO(3) | 2.704 / 2.759 | LEDGER_ONLY | - | - | results/ledger_comments/covTLIO_json_analysis.py:332 ('#2.70452'), :356 ('#2.7591551435') | - | Server B | checkpoint and output dirs deleted; ID/ID used a learned covariance, ID/SO(3) used const-cov + fixStateTrans |
+| Table 1 / Table 5 | RIDI ResNet+SCEKF (RoNIN+SCEKF) | 1.207 / 2.990 | ABSENT | ridi_resnet_epoch1 (NOT the paper model) | checkpoint_best.pt 7f8af8d337f094e9 (epoch 1) | RECOMPUTED row imu-equivariant-learning/batch_filter_outputs_ridi_uf200/resnet | filter diverges (34-38 m) with the epoch-1 checkpoint | Server B | only an epoch-1 checkpoint exists |
+| Table 1 / Table 5 | RIDI ResNet+SCEKF+SO(3) aug. | 1.401 / 3.011 | CKPT_ONLY | ridi_resnet_so3aug | checkpoint_best.pt f778c926eecd693f (epoch 13) | - | no filter output exists | Server B |  |
+| Table 1 / Table 5 | RIDI EqNIO ID/ID | 2.408 | PINNED | ridi_eqnio_o2_so3aug | checkpoint_best.pt 280088754d97b1e3 (epoch 70) | results/RIDI_EqNIO_ATE_summary.md; RECOMPUTED row EqNIO/models/eqnio_o2_ridi_wf_filter_so3aug (22 seqs) | 2.4082 (EqNIO-metric RMSE) | Server B | the paper's RIDI 'EqNIO' is the SO(3)-AUGMENTED EqNIO (180 deg); unaugmented = 2.160 (ridi_eqnio_o2_noaug) |
+| Table 1 / Table 5 | RIDI EqNIO ID/SO(3) | 3.460 | CKPT_ONLY | ridi_eqnio_o2_so3aug | as above | results/RIDI_EqNIO_ATE_summary.md; RECOMPUTED rows ..._so3aug_equiv / ..._so3aug_tilt | 2.4447 (random SO(3), equivariance protocol) / 2.4069 (60 deg tilt) | Server B | 3.460 not reproduced |
+| Table 1 / Table 5 | RIDI GINIO-W ID/ID, ID/SO(3) | 0.952 / 2.450 | CKPT_ONLY | ridi_ginio_w | checkpoint_best.pt 424a9a9319b09c3f (epoch 233); model_torchscript.pt d8f5e3adbb09c5b2 | RECOMPUTED rows EqNIO/models/ln_ridi_wf_filter_noaug / _equiv; results/server_B_rebuttal/ridi_refilter/ridi_3arm_ate.json | 2.8357 / 2.9199 (EqNIO SCEKF, 22 seqs); 1.417 Umeyama (Aug-2026 re-filter, 22 common seqs) | Server B | checkpoint is the slope-0.1 bias-free Lie-Neuron class (registry key ln_resnet_slope1_nobias; ln_conv_2regress_nochannelmix_slope_1.py), not ln_resnet |
+| Table 1 / Table 5 | RIDI ResNet-S+InEKF | 1.445 / 4.752 | ABSENT | - | - | - | - | Server B | no RIDI sensor-frame model exists on either machine |
+| Table 1 / Table 5 | RIDI GINIO-S | 1.319 / 1.457 | ABSENT | - | - | - | - | Server B | no RIDI sensor-frame model exists on either machine |
+| Table 1 | Params column | 5.42M / 6.02M / 0.57M | PINNED | tlio_resnet_so3aug / tlio_eqnio_o2 / tlio_ginio_w_ln189 | - | INDEX.json (params_excl_bn) | 5,424,646 / 6,020,998 / 572,581 (excluding BatchNorm statistics) | Server A + Server B | FLOPs not checked; Table 2 uses the including-BatchNorm convention (5.43M / 6.03M) |
+| Table 13 | AquaticVision S04 / S06 | 0.575 / 0.473 / ... | ABSENT | - | - | - | - | Server A + Server B | no data, code or results on either machine |
+
+## Table 5
+
+| paper item | cell | printed | status | release folder | checkpoint file | evidence | measured | on | notes |
+|---|---|---|---|---|---|---|---|---|---|
+| Table 5 | TLIO/RIDI RTE and drift ratio | various | PARTIAL | as Table 1 | - | RECOMPUTED_FILTER_METRICS.csv (both metric codes side by side) | see csv | Server B | Table 1/5 mix two filter metric codes (EqNIO-metric vs TLIO-metric); the paper's RTE definition matches the TLIO-metric only; RTE windows differ across pipelines |
+
+## Table 6
+
+| paper item | cell | printed | status | release folder | checkpoint file | evidence | measured | on | notes |
+|---|---|---|---|---|---|---|---|---|---|
+| Table 6 | ResNet ID/ID, ID/SO(3) | 1.817 / 108.235 | LEDGER_ONLY / ABSENT | - | - | results/ledger_comments/covTLIO_json_analysis.py:45 ('#1.817235') | 2.116 (retrain, results/server_B_rebuttal/TABLE7_NETWORK_RECONSTRUCTION.csv) | Server B | 108.235 appears nowhere; the retrained ResNet gives 60.92 under feature-only SO(3) |
+| Table 6 | ResNet+SO(3) aug. | 1.966 / 3.189 | ABSENT (number) | tlio_resnet_so3aug | as Table 1 | - | - | Server B | no TLIO network-only test dump for this checkpoint |
+| Table 6 | GINIO-Sensor | 2.293 / 2.293 | LEDGER_ONLY | - | - | results/ledger_comments/covTLIO_json_analysis.py (ln_conv_last_align_notcomp_... paths) | - | Server B | source model directory is named 'last_align' = LFA, but the row label is sensor frame WITHOUT LFA |
+| Table 6 | GINIO-World / GINIO-Sensor+LFA | 1.828 / 1.828 | LEDGER_ONLY (ID/ID) / ABSENT (ID/SO(3)) | tlio_ginio_w_ln189 (epoch 189 likely) | checkpoint_189.pt | newTLIO/batch_test_outputs/...189/metrics.json = 1.8276 (Server B path, not bundled); bundled results/nn_outputs/...__batch_test_outputs__...189 gives 2.0511 with epoch-86 weights | 1.8276 (not bundled) / 2.0511 (bundled, epoch 86) | Server B | no SO(3) dump giving 1.828 found; TABLE7_NETWORK_RECONSTRUCTION.csv: epoch-86 weights 2.0511 (ID) / 2.0422 (SO3) |
+
+## Table 7
+
+| paper item | cell | printed | status | release folder | checkpoint file | evidence | measured | on | notes |
+|---|---|---|---|---|---|---|---|---|---|
+| Table 7 | GINIO SCEKF + gravity comp. | 4.191 / 6.455 | LEDGER_ONLY / ABSENT | - | - | results/ledger_comments/covTLIO_json_analysis.py:266,337,344 ('#4.1910023') | - | Server B | 6.455 appears in no ledger |
+| Table 7 | GINIO InEKF + gravity comp. | 2.883 / 3.424 | LEDGER_ONLY / ABSENT | - | - | results/ledger_comments/covTLIO_json_analysis.py:167 ('# 2.883687'), :276 ('#2.883275086') | - | Server B | two different paths annotated 2.883; 3.424 appears in no ledger; this row is printed twice in the camera-ready Table 7 and the no-gravity InEKF row is also duplicated |
+
+## Table 2
+
+| paper item | cell | printed | status | release folder | checkpoint file | evidence | measured | on | notes |
+|---|---|---|---|---|---|---|---|---|---|
+| Table 2 | AirIO (no-att.) ATE | 5.579 | PINNED | nanobench_airio_noatt | best_model.ckpt d149f819dbdac4c3 (epoch 73) | Server A nanobench_final_table/canonical_v2.json key AirIO_no_att; Server A audit CHECKPOINT_SELECTION.md (SUBMITTED_EXACT) | 5.5785 | Server A | Server B's own AirIO no-att run (nanobench_airio_noatt_serverb) is a different model giving 3.988 |
+| Table 2 | AirIO (no-att.) ID/SO(3) | 5.679 | UNSUPPORTED | nanobench_airio_noatt | as above | Server A audit MISSING_ARTIFACTS.md D, DO_NOT_USE_OR_CONDITIONAL.md D12 | project script reports id_so3 identical to standard (5.579) on every metric; audit uniform-SO(3) gives +31.0 % | Server A | no generator for the printed value |
+| Table 2 | AirIO (with-att.) ATE | 1.205 | PINNED | nanobench_airio_withatt | best_model.ckpt 66bcda3c09d09109 (epoch 67) | canonical_v2.json key AirIO_with_att ('AWS-trained'); CHECKPOINT_SELECTION.md | 1.2049 | Server A | Server B's own with-att run (nanobench_airio_withatt_serverb) gives 1.1289 (canonical_v2 key AirIO) |
+| Table 2 | AirIO (with-att.) ID/SO(3) | 1.302 | UNSUPPORTED | nanobench_airio_withatt | as above | Server A audit MISSING_ARTIFACTS.md D | 10.717 (project script, physical remount) / 5.3877 (audit, uniform SO(3)) / 1.7314 (audit, Supplement G.1 reading) | Server A | three different measured numbers, none equal to 1.302 |
+| Table 2 / Table 4 | GINIO-A (no-att.) ATE and ID/SO(3) | 1.430 / 1.430 | PINNED | nanobench_ginio_a_noatt | best_model.ckpt 7432b5751164d7bf (epoch 16) | Server A audit CHECKPOINT_SELECTION.md; GATE_A__attitude_log_map.md A.4.3 | 1.4302; mean-equivariance error 4.4e-12 under both the physical-remount and G.1 protocols | Server A | equality is a model property; covariance (diagonal head) violates congruence: 2.19e-1 |
+| Table 2 / Table 4 | GINIO-A (with-att.) ATE | 1.045 | PINNED | nanobench_ginio_a_withatt | best_model.ckpt f70ae327eccd0f33 (epoch 78) | CHECKPOINT_SELECTION.md; GATE_A A.4.3 | 1.0453 (1.0479 after quaternion renormalisation) | Server A | retraining with the identical config did not reproduce it (3 seeds: 1.221 / 1.387 / 1.421, DO_NOT_USE D3) |
+| Table 2 | GINIO-A (with-att.) ID/SO(3) | 1.045 | UNSUPPORTED (as an equivariance claim) | nanobench_ginio_a_withatt | as above | GATE_A__attitude_log_map.md A.3, A.4.3 | G.1 protocol: 1.0461 (equiv. err 5.0e-2); physical remount: 1.0738 (equiv. err 9.01e-1) | Server A | Log(R_WS) attitude channel is not equivariant under a remount; equality holds only when the attitude channel itself is rotated |
+| Table 2 | ResNet1D ATE | 0.645 | PINNED | nanobench_resnet1d | checkpoint_best.pt 7fc638836d2964e0 (epoch 71) | results/nano_unified_metrics_v2/all_metrics.json key nano\|ResNet_nano_NN\|NN; results/server_B_rebuttal/table2_verify/A1_resnet_body_nolfa_w2sec_e80_mse.log; Server A canonical_v2.json key ResNet | 0.645470 | Server A + Server B | archived dir name 'w2sec' refers to about 2 s of 100 Hz flight (window_time 1.0 at imu_freq 200); the world-frame models_nano/resnet is the WRONG checkpoint (1.248) |
+| Table 2 | ResNet1D ID/SO(3) | 0.710 | UNSUPPORTED | nanobench_resnet1d | as above | results/HANDOFF_paper_handoff_v2/MASTER_RESULTS.csv (ResNet so3 rows) | 0.660 at 30 deg ... 1.562 at 180 deg (per-window uniform-axis rotation) | Server B | no generator for 0.710 |
+| Table 2 | EqNIO O(2) ATE | 0.828 | PINNED | nanobench_eqnio_o2 | checkpoint_best.pt 9a9d592f73f6ed46 (epoch 74) | all_metrics.json key nano\|EqNIO_O2_nano_NN\|NN; results/nn_outputs/EqNIO__TLIO-master__batch_test_outputs_nano__eqnio_o2_grav_aligned_mse_e80; canonical_v2.json key EqNIO_O2 | 0.828205 | Server A + Server B | NanoBench-trained model (81 epochs, MSE), not the EqNIO authors' TLIO model; scored vs integrated velocity targets after the O(2) frame transform (vs GT positions = 0.970, VALIDATION_NOTES.md) - differs from other rows |
+| Table 2 | EqNIO O(2) ID/SO(3) | 1.267 | UNSUPPORTED | nanobench_eqnio_o2 | as above | MASTER_RESULTS.csv (EqNIO_O2 so3 rows) | 0.809 at 30 deg ... 0.876 at 180 deg | Server B | no generator for 1.267 |
+| Table 2 | GINIO-E ATE and ID/SO(3) | 0.785 / 0.785 | PINNED (training protocol undocumented in the paper) | nanobench_ginio_e_so3aug_tlio | checkpoint_best.pt 46ed9465a95d53ed (epoch 31); model_torchscript.pt c749740fa8fe6799 | Server A cov_ablation/outputs/eqnio_trajectory_ate.json key VN_EqNIO_SO3 (mean over 17 seqs); Server A audit CHECKPOINT_MANIFEST.csv row overnight/vn_so3_so3aug | 0.7854 | Server A | TLIO-trained (40 epochs, so3_augment 180 deg) eq_so3_frame_fullCov_2vec_2deep evaluated zero-shot on NanoBench; no NanoBench-trained GINIO-E exists; covariance-law error 1.32e-14 (GATE_C C.2) |
+| Table 2 / Table 9 | GINIO-RD ATE and ID/SO(3) | 0.581 / 0.581 | PINNED | nanobench_ginio_rd_t119 | checkpoint_best.pt 684665d0a6cf0b60 (epoch 135) | all_metrics.json key nano\|ln_resnet_t119_nano_NN...; table2_verify/A4.log; canonical_v2.json key ln_resnet_nolfa_t119_ablation_only | 0.580530 | Server A + Server B | 544,021 params (paper 0.57M); trained WITHOUT LFA; window 0.775 s; output-block Linear has bias=True so exact equivariance of this class is unverified (Server A D1) |
+| Table 2 / Table 8 | GINIO-RS ATE and ID/SO(3); Table 8 Spectral MSE | 0.789 / 0.789; vel. RMSE 0.234, mu-eq. 7.24e-4 | PINNED (values) - label conflict | nanobench_ginio_rs_chol_mse | checkpoint_best.pt 0cbb3275e118a9f7 (epoch 111) | all_metrics.json key nano\|phase1p5_ln_resnet_chol_mse_w2sec_e200_b16\|NN; canonical_v2.json key ln_resnet_chol_LFA_MSE; Server A TABLE_A_cov_ablation.csv row ln_resnet_chol_MSE | 0.788745; 0.23374; 7.245e-4 | Server A + Server B | trained on nanobench_bodyframe_nolfa_2nd_version (NO LFA) although Table 2 says body+LFA and canonical_v2 labels it lfa:true; no LFA-trained chol weights survive |
+| Table 2 | Params column | 0.33M / 0.39M / 0.045M / 0.045M / 5.43M / 6.03M / 6.03M / 0.57M / 0.80M | PARTIAL | see MANIFEST | - | INDEX.json | 330,598 / 387,014 / 44,486 / 44,563 / 5,434,780 / 6,031,132 / 6,032,284 / 546,154 / 804,551 (including BatchNorm statistics) | Server A + Server B | GINIO-RD trial 119 has 0.544M / 0.546M parameters, not 0.57M; Table 1 uses the excluding-BatchNorm convention |
+
+## Table 4
+
+| paper item | cell | printed | status | release folder | checkpoint file | evidence | measured | on | notes |
+|---|---|---|---|---|---|---|---|---|---|
+| Table 4 | GINIO-A original (0.273M) body / body+att. | 1.502 / 1.062 | AGGREGATE_ONLY (checkpoints fail strict load) | - (not released) | Server A Air-IO/experiments/nanobench_noatt_vn (271,939 params, sha 3b2bb6336ec3cd09) and nanobench_rot_vn (272,163, 829cf8d0be8f69b8) | Server A canonical_v2.json keys VN_AirIO_no_att (1.5019) and VN_AirIO_with_att (1.0617); Server A audit DO_NOT_USE_OR_CONDITIONAL.md D11 | 1.5019 / 1.0617 from stored aggregates | Server A | checkpoints fail strict loading against the current airio/model/vn_codenet.py (15 missing / 3 unexpected keys, VNLayerNorm added later); not released |
+| Table 4 | GINIO-A reduced body / body+att. | 1.430 / 1.045 | PINNED | nanobench_ginio_a_noatt / nanobench_ginio_a_withatt | as Table 2 | as Table 2 | 1.4302 / 1.0453 | Server A | same checkpoints as the Table 2 rows; 0.273M/0.045M = 6.1x |
+
+## Table 8
+
+| paper item | cell | printed | status | release folder | checkpoint file | evidence | measured | on | notes |
+|---|---|---|---|---|---|---|---|---|---|
+| Table 8 | Vel. RMSE Diag-MSE / Diag-NLL / Spectral-MSE / Spectral-NLL | 0.284 / 0.303 / 0.234 / 0.260 | PINNED | nanobench_ginio_rd_lfa_mse / nanobench_ginio_rd_lfa_nll / nanobench_ginio_rs_chol_mse / nanobench_ginio_rs_chol_nll | 9f2c07d52c4c691c / 845c4f63e82a96e9 / 0cbb3275e118a9f7 / 8a9f5c51b9b34ba9 | Server A cov_ablation/outputs/TABLE_A_cov_ablation.csv (rmse_vel); Server B results/nn_outputs/*nano_body* metrics.json rmse_vel | 0.28399 / 0.30263 / 0.23374 / 0.26050 | Server A + Server B | diagonal rows = LFA data + batch 1024 + 81 epochs + output biases; spectral rows = no-LFA data + batch 16 + 201 epochs + no biases; not a head-only ablation. Near-matched no-LFA diag-NLL control: nanobench_ginio_rd_nolfa_nll_matched (vel RMSE 0.230) |
+| Table 8 | NLL / NEES / cov95, Diag-NLL | -1.741 / 2.959 / 0.915 | PINNED | nanobench_ginio_rd_lfa_nll | 845c4f63e82a96e9 | TABLE_A_cov_ablation.csv row ln_resnet_lfa_NLL (mean_NLL, mean_mahal, cov_95) | -1.7411 / 2.9590 / 0.9146 | Server A | matches the paper |
+| Table 8 | NLL / NEES / cov95, Spectral-NLL | -1.875 / 2.974 / 0.837 | UNSUPPORTED (NLL, NEES) / PINNED (cov95) | nanobench_ginio_rs_chol_nll | 8a9f5c51b9b34ba9 | TABLE_A_cov_ablation.csv row ln_resnet_chol_NLL | -0.8747 / 6.774 / 0.8370 (the only measured values on either machine) | Server A | printed -1.875 and 2.974 have no measured source; cov95 0.837 reproduces; Server B's stored sigmas give Diag-NLL NEES 3.021, cov95 0.908 under its own code |
+| Table 8 | Sigma-eq. err / mu-eq. err | Diag-NLL 5.52e-1 / 0.317; Spectral-NLL 4.34e-4 / 4.30e-4; Diag-MSE - / 0.453; Spectral-MSE - / 7.24e-4 | PINNED (Server A protocol) | as above | as above | TABLE_A_cov_ablation.csv (sigma_eq_err_naive, mu_eq_err_naive); Server B results/server_B_rebuttal/D5_cov_equivariance.json | Server A: 0.5516 / 0.3166; 4.337e-4 / 4.302e-4; 0.4528; 7.245e-4. Server B (50 rotations x 32 windows): diag cov err 0.52-0.61 median/mean, spectral chol cov err 8e-8 ... 1e-6 | Server A + Server B | the printed values are Server A's; Server B's protocol gives spectral errors about 400x smaller; mu-eq gap is the output-bias confound (Server A D1) |
+
+## Fig. 9
+
+| paper item | cell | printed | status | release folder | checkpoint file | evidence | measured | on | notes |
+|---|---|---|---|---|---|---|---|---|---|
+| Fig. 9 | NanoBench covariance figure (a) / (b) / (c) | 0.303 vs 0.260; 5.5e-1 vs 4.3e-4; NEES gap 1.65 vs 0.81, cov95 gap 0.13 vs 0.06 | PARTIAL: (a),(b) PINNED; (c) INCONSISTENT with Table 8 | nanobench_ginio_rd_lfa_nll / nanobench_ginio_rs_chol_nll | as above | Server A cov_ablation/outputs/TABLE_A_nll_decomp_calib.json (nees_cal_test 4.6465 / 3.8119; coverage_cal_test[0.95] 0.8169 / 0.8895) | (c) matches \|4.6465-3\| = 1.65, \|3.8119-3\| = 0.81, \|0.8169-0.95\| = 0.13, \|0.8895-0.95\| = 0.06 | Server A | panel (c) plots post-hoc calibrated (alpha-scaled) metrics while Table 8 and Sec. H.5 describe raw, unscaled NEES/coverage; generator absent |
+
+## Fig. 8
+
+| paper item | cell | printed | status | release folder | checkpoint file | evidence | measured | on | notes |
+|---|---|---|---|---|---|---|---|---|---|
+| Fig. 8 | NanoBench velocity-RMSE ID/SO(3) stress | curves | ABSENT (generator) | nanobench_airio_* / nanobench_ginio_a_* / nanobench_resnet1d / nanobench_ginio_rs_chol_nll | - | Server A cov_ablation/outputs/TABLE_B_id_so3.csv, TABLE_B_cross_model.csv (angle-resolved velocity RMSE for 10 models) | e.g. AirIO with-att 0.323 -> 1.116 at 180 deg; ln_resnet_chol_NLL 0.2605 flat | Server A | values look hand-entered; the curve labelled 'GINIO-RS' corresponds to the Spectral-NLL checkpoint (0.260), not the Table 2 GINIO-RS (0.234); the VN-AirIO rows of TABLE_B are from the 0.273M checkpoints loaded non-strictly and are invalid (Server A D11) |
+
+## Fig. 10
+
+| paper item | cell | printed | status | release folder | checkpoint file | evidence | measured | on | notes |
+|---|---|---|---|---|---|---|---|---|---|
+| Fig. 10 | NEES coverage / NLL decomposition | curves | NOT_REPRODUCIBLE_HERE | as Table 8 | - | TABLE_A_nll_decomp_calib.json holds aggregates only | - | Server A | per-window full-covariance dumps absent on both machines |
+
+## Table 9
+
+| paper item | cell | printed | status | release folder | checkpoint file | evidence | measured | on | notes |
+|---|---|---|---|---|---|---|---|---|---|
+| Table 9 / Fig. 4 | Frame mismatch TLIO and RIDI: GINIO-R, ResNet, ResNet+SO(3) aug. (gravity and LFA columns) | e.g. TLIO gravity GINIO-R 1.85 ... 1.88 | LEDGER_ONLY (hard-coded) | - | - | scripts/workspace_root/make_fig_paper_B_FINAL.py (DATA dict: 'user Excel'); results/HANDOFF_paper_handoff_v2/05_figure_B_handoff/INSIGHTS.md ('User-curated Excel (hardcoded literals)') | partial: TLIO ResNet LFA cells approximately match batch_test_outputs_body/*pertblfa_* | Server B | handoff README: 'visually extracted from prior published figure, not re-measured'; TLIO GINIO-R gravity 10 deg printed 1.86 vs ledger 1.85 |
+| Table 9 / Fig. 4 | Frame mismatch TLIO and RIDI: EqNIO O(2), EqNIO O(2)+SO(3) aug. (gravity columns, 20 cells) | 2.20 ... 3.95; 2.15 ... 2.75; 1.45 ... 2.35; 1.42 ... 1.75 | PROJECTED | tlio_eqnio_o2 / ridi_eqnio_o2_so3aug (inputs only) | - | make_fig_paper_B_FINAL.py docstring ('projected (Nano pattern)'); INSIGHTS.md 'Projected / smoothed'; results/HANDOFF_paper_handoff_v2/04_raw_metrics/tlio/results_network.csv (measured NN-only saturates at 23-30 m) | measured NN-only EqNIO on body-frame TLIO: 29.9 m nominal | Server B | generator labels these cells projected; no measured source |
+| Table 9 / Fig. 4 | Frame mismatch NanoBench (5 methods, gravity columns) | GINIO-R 0.56/0.58/0.58/0.59/0.59; EqNIO 0.93/0.96/1.02/1.10/1.18; EqNIO+aug 0.96/0.97/0.99/1.02/1.06; ResNet 0.66/0.66/0.66/0.67/0.68; ResNet+aug 1.20/1.21/1.22/1.24/1.26 | CKPT_ONLY (contradicts measured) | nanobench_ginio_rd_t119 / nanobench_eqnio_o2 / nanobench_eqnio_o2_so3aug / nanobench_resnet1d / nanobench_resnet1d_so3aug | as Table 2 | results/HANDOFF_paper_handoff_v2/MASTER_RESULTS.csv (gravity rows); 04_raw_metrics/nano/* | GINIO_t119 0.5814/0.5821/0.5841/0.5867/0.5899; EqNIO_O2 0.9295/0.9280/0.9243/0.9210/0.9047; EqNIO_O2_so3aug 0.9606/0.9563/0.9572/0.9438/0.9465; ResNet 0.6459/0.6465/0.6496/0.6554/0.6679; ResNet_so3aug 1.2056/1.2048/1.2041/1.2029/1.2012 | Server B | main text Sec. 5.3 claims 3->20 deg increases of +0.03 / +0.25 / +0.10 m; measured +0.009 / -0.024 / -0.015; the paper's own Fig. 4 NanoBench panel plots values close to the measured ones |
+| Table 9 / Fig. 4 | Frame mismatch NanoBench (LFA columns) | GINIO-R 0.55 ... 0.60; ResNet 0.64 ... 0.70; ResNet+aug 1.21 ... 1.27 | CKPT_ONLY (contradicts measured) | as above | as above | MASTER_RESULTS.csv (lfa rows) | GINIO_t119 0.5801 ... 0.5809; ResNet 0.6447 ... 0.6354; ResNet_so3aug 1.2077 ... 1.2129 | Server B |  |
+
+## Fig. 5
+
+| paper item | cell | printed | status | release folder | checkpoint file | evidence | measured | on | notes |
+|---|---|---|---|---|---|---|---|---|---|
+| Fig. 5(a) | Filter-connected attitude sweep GINIO vs TLIO ResNet at 20 deg | 3.07 vs 4.85 | PINNED | tlio_ginio_w_ln189 (epoch 86) + tlio_resnet_scekf_retrain2026 | checkpoint_best.pt 5785386fe4d5b58a; model_torchscript.pt ed39d955462df276 | results/server_B_rebuttal/full36/p3_raw_sweep_WIDE.json (GINIO.20.raw_mean, ResNet.20.raw_mean); WRITER_BRIEF_exp3_exp4.md | 3.0739 / 4.8502 | Server B | paper image == figures/combined_sweep3_cov_short.png; generator script and the TorchScript export used lost (re-export from checkpoint_best) |
+| Fig. 5(b) | Frozen-mean covariance sweep | 1.072 vs 1.081 nominal; 1.826 vs 1.349 at 20 deg | PINNED (mixed curves) | tlio_fig5b_diag_s0v2 (checkpoint_20.pt) / tlio_fig5b_spec_s0v2 | checkpoint_20.pt b333f2c72543b18e; checkpoint_best.pt 4b662c363fcc00b2 | results/server_B_rebuttal/full36/p4_fullcov_WIDE.json (diag_model.0 / spec_full.0 / diag_model.20 / spec_diag.20) | 1.0724 / 1.0810 / 1.8256 / 1.3494 | Server B | 1.081 is the spec_FULL nominal while 1.349 is the spec_DIAG curve (spec_full at 20 deg = 2.364; spec_diag nominal = 1.0753); diagonal arm uses epoch 20, not best; epoch selection on 5 test seqs (test_list1.txt); the sweep needs the ATT_ERR_DEG attitude-error hook (src/tracker/imu_tracker.py) and the full 3x3 covariance passthrough in the measurement source |
+
+## Fig. 11
+
+| paper item | cell | printed | status | release folder | checkpoint file | evidence | measured | on | notes |
+|---|---|---|---|---|---|---|---|---|---|
+| Fig. 11 | Nominal per-sequence ATE CDFs, TLIO (left) and NanoBench (right) | curves | PARTIAL: NanoBench PINNED / TLIO PARTIAL | nanobench_resnet1d / nanobench_eqnio_o2 / nanobench_ginio_rd_t119 (+ TLIO models) | as Table 2 | results/server_B_rebuttal/figures/tlio_raw_nanobench_nnonly_combined.png (byte-identical to the paper image per Server B); results/nano_unified_metrics_v2/all_metrics.json per_seq | - | Server B | generator script lost |
+
+## Fig. 12
+
+| paper item | cell | printed | status | release folder | checkpoint file | evidence | measured | on | notes |
+|---|---|---|---|---|---|---|---|---|---|
+| Fig. 12 | Representative filter-connected SO(3) trajectories | GINIO 1.69 / 0.68 / 0.44 ... | PINNED | tlio_ginio_w_ln189 (epoch 86) / tlio_resnet_so3aug / tlio_eqnio_o2 | as Table 1 | results/server_B_rebuttal/scripts/make_filter_traj_grid.py; figures/filter_traj_grid_so3.png; figures/FILTER_TRAJ_3MODEL.csv | exact | Server B | raw filter states (EqNIO/results/{ln_189_so3_60,resnet_so3aug_so3_60_no_grav,TLIO_o2_so3_60}) not bundled (large) |
+
+## Main text
+
+| paper item | cell | printed | status | release folder | checkpoint file | evidence | measured | on | notes |
+|---|---|---|---|---|---|---|---|---|---|
+| Main text Sec. 4.2 | RIDI NN-only GINIO vs IMUNet | 0.927 vs 1.43 | PARTIAL: GINIO PINNED / IMUNet NO_SOURCE | ridi_ginio_w / ridi_imunet_reimpl | 424a9a9319b09c3f / 9cb458cd76c49cd5 | results/nn_outputs/...batch_test_outputs_ridi__world_ln2regress_slope1/aligned_ate.json (sim3 mean over 23 seqs); checkpoints ridi_imunet_reimpl/aligned_ate.json | GINIO Sim(3) 0.9274 (Umeyama SE(3) 1.2524, unaligned 2.6276); IMUNet reimplementation Sim(3) 0.9380 | Server B | 1.43 found nowhere; the paper reports a Sim(3)-aligned number without saying so; IMUNet is a from-scratch reimplementation |
+
+## Abstract
+
+| paper item | cell | printed | status | release folder | checkpoint file | evidence | measured | on | notes |
+|---|---|---|---|---|---|---|---|---|---|
+| Abstract / Sec. 4.2 | TLIO GINIO 2.018 vs EqNIO 76.389; 11.6x fewer FLOPs; 10x fewer params | 2.018 / 76.389 / 11.6x | PARTIAL: see Table 1 rows | tlio_ginio_w_ln189 / tlio_eqnio_o2 | - | as Table 1 | 76.3895 reproduces; 2.018 does not (2.2052); 206.78/17.81 = 11.6 | Server B | FLOPs not re-measured |
+| Abstract / Sec. 4.3 | GINIO-A 5.579 -> 1.430; GINIO-RD 0.581 vs ResNet1D 0.645; 7.4x / 8.7x fewer params | as listed | PINNED | nanobench_airio_noatt / nanobench_ginio_a_noatt / nanobench_ginio_rd_t119 / nanobench_resnet1d | - | as Table 2 | 5.5785 / 1.4302 / 0.580530 / 0.645470; 330,598/44,486 = 7.43; 387,014/44,563 = 8.68 | Server A + Server B |  |
+
+## Sec. 5
+
+| paper item | cell | printed | status | release folder | checkpoint file | evidence | measured | on | notes |
+|---|---|---|---|---|---|---|---|---|---|
+| Sec. 5.2 / Abstract | spectral head reduces covariance-equivariance error by over three orders of magnitude | 5.52e-1 -> 4.34e-4 | PINNED (Server A protocol) | nanobench_ginio_rd_lfa_nll / nanobench_ginio_rs_chol_nll | - | TABLE_A_cov_ablation.csv | 0.5516 -> 4.337e-4 (1270x) | Server A | the diagonal head's failure is structural (invariant scalars), see Server A GATE_C |
+| Sec. 5.3 | NanoBench gravity sweep 3->20 deg: GINIO-R +0.03 m, EqNIO O(2) +0.25 m, EqNIO+aug +0.10 m | +0.03 / +0.25 / +0.10 | UNSUPPORTED | nanobench_ginio_rd_t119 / nanobench_eqnio_o2 / nanobench_eqnio_o2_so3aug | - | MASTER_RESULTS.csv gravity rows | +0.009 / -0.024 / -0.015 | Server B | see Table 9 NanoBench row |
+
+## Tables 10-12
+
+| paper item | cell | printed | status | release folder | checkpoint file | evidence | measured | on | notes |
+|---|---|---|---|---|---|---|---|---|---|
+| Tables 10-12, Figs. 13-14 | Fetch remounting (all rows incl. augmentation ablation) | ResNet 8.151 / GINIO-R 0.495 / ... | ABSENT | - | - | only fetch_dataset.zip inside the CoRL supplementary material (23 nominal + 23 x90 + 23 y90 sequences) | - | Server A + Server B | no loader, config, checkpoint, result or figure source on either machine; paper says 23 train + 4 held-out nominal + 46 remount = 73 sequences, the zip holds 69 |
+
+## App.
+
+| paper item | cell | printed | status | release folder | checkpoint file | evidence | measured | on | notes |
+|---|---|---|---|---|---|---|---|---|---|
+| App. C.3 | Equivariance of GINIO-A components | 1e-15 ... 1e-13 | PINNED (script) | - | - | airio/model/test_vn_equivariance.py (in this repo) | 2e-16 ... 2e-15 | Server B |  |
+| App. C.3 | Full GINIO-A mean-equivariance error < 5e-9; GINIO-E mean and covariance within 1e-15 | < 5e-9 / < 1e-15 | PINNED (no-att) / UNSUPPORTED (with-att) / PINNED (GINIO-E, 1e-14) | nanobench_ginio_a_noatt / nanobench_ginio_a_withatt / nanobench_ginio_e_so3aug_tlio | - | Server A GATE_A A.4.3 (no-att 4.4e-12; with-att 9.01e-1 physical remount, 5.0e-2 G.1); GATE_C C.2 (GINIO-E covariance law 1.32e-14) | 4.4e-12 (no-att); 0.90 (with-att, remount); 1.32e-14 (GINIO-E) | Server A | the sentence holds for the no-attitude model only; GINIO-E measured at 1e-14 rather than 1e-15 |
+| App. G.1 / Table 2 caption | 17 held-out NanoBench test sequences; benchmark alignment protocol | 17 | PINNED | - | - | splits/nanobench/test_list.txt; results/nano_unified_metrics_v2/VALIDATION_NOTES.md | 17 sequences, Umeyama SE(3) ATE (rotation + translation, no scale) | Server A + Server B |  |
+
+## README
+
+| paper item | cell | printed | status | release folder | checkpoint file | evidence | measured | on | notes |
+|---|---|---|---|---|---|---|---|---|---|
+| README / data | TLIO golden split sizes 284 / 36 / 36 | 284 / 36 / 36 | PARTIAL | - | - | splits/tlio_golden/*_list.txt | 283 train / 35 val / 36 test non-empty entries (the handoff train and val lists each contain one blank line) | Server B |  |

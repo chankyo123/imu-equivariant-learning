@@ -1,6 +1,6 @@
 # Paper-to-artifact map (GINIO, CoRL 2026 camera-ready)
 
-Rendered from `docs/PAPER_ARTIFACT_MAP.csv` (one row per paper cell or figure). Table and figure numbers follow the **camera-ready** PDF (camera-ready Table 8 = submission Table 9 covariance ablation; camera-ready Table 9 = submission Table 10 frame-estimation mismatch; camera-ready Tables 10-12 = Fetch). `release_folder` refers to `checkpoints/<folder>/` as listed in `checkpoints/MANIFEST.md`. Evidence paths starting with `results/`, `scripts/`, `code/` are inside the Server B handoff bundle (`paper_results.tar.gz` carries the result files); paths starting with `Server A` are from the AWS box.
+Rendered from `docs/PAPER_ARTIFACT_MAP.csv` (one row per paper cell or figure). Table and figure numbers follow the **camera-ready** PDF (camera-ready Table 8 = submission Table 9 covariance ablation; camera-ready Table 9 = submission Table 10 frame-estimation mismatch; camera-ready Tables 10-12 = Fetch). `release_folder` refers to `checkpoints/<folder>/` as listed in `checkpoints/MANIFEST.md`; folders whose MANIFEST status carries `NOT_IN_V1.0` are documented and verified but are not in the `v1.0-corl2026` release assets. Evidence paths starting with `results/`, `scripts/`, `code/` are inside the Server B handoff bundle (`paper_results.tar.gz` carries the result files); paths starting with `Server A` are from the AWS box.
 
 ## Legend
 

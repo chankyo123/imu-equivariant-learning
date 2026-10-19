@@ -41,7 +41,7 @@ parameter count and the paper value it reproduces ([Model zoo](#model-zoo)).
 ## News
 
 - **2026-10-18** — Code release: all three instantiations, the paper's evaluation scripts
-  (`scripts/paper/`), 32 checkpoints with SHA-256 across TLIO / RIDI / NanoBench
+  (`scripts/paper/`), 16 checkpoints with SHA-256 (every surviving Table 1 and Table 2 model and baseline) across TLIO / RIDI / NanoBench
   ([release `v1.0-corl2026`](../../releases/tag/v1.0-corl2026)), and the exact split lists
   (`splits/`). Repository renamed from `imu-equivariant-learning` to **GINIO**.
 - **2026-10** — Camera-ready and [OpenReview page](https://openreview.net/forum?id=nl8iBTm3Mt)
@@ -83,7 +83,7 @@ Known-good versions, optional extras and gotchas: [`docs/INSTALL.md`](docs/INSTA
 ## Quick start
 
 ```bash
-# 1. checkpoints (SHA-256 verified) — one benchmark or everything (~1.2 GB)
+# 1. checkpoints (SHA-256 verified) — one benchmark or everything (~0.7 GB)
 bash scripts/download_checkpoints.sh nanobench
 
 # 2. data: TLIO golden / RIDI / NanoBench in the TLIO layout under local_data/  -> docs/DATA.md
@@ -115,19 +115,18 @@ A one-minute CPU self-check of the equivariance machinery: `cd airio && python -
 Checkpoints are assets of the [`v1.0-corl2026` release](../../releases/tag/v1.0-corl2026), one
 archive per benchmark plus [`paper_results.tar.gz`](../../releases/download/v1.0-corl2026/paper_results.tar.gz)
 (the stored outputs behind every "reproduced" value) and a `SHA256SUMS` file;
-`bash scripts/download_checkpoints.sh` fetches and verifies them. The table lists the rows that
-back printed numbers; [`checkpoints/MANIFEST.md`](checkpoints/MANIFEST.md) is the source of truth
-for all 32 folders, hashes, parameter counts, loader notes and the 18 traps you should read before
-loading anything. Table numbers follow the camera-ready PDF.
+`bash scripts/download_checkpoints.sh` fetches and verifies them. The table lists the 16 released
+folders and the paper rows they back; [`checkpoints/MANIFEST.md`](checkpoints/MANIFEST.md) is the
+source of truth for hashes, parameter counts, loader notes, the 18 traps you should read before
+loading anything, and the 16 further surviving models that are documented but not part of this
+release. Table numbers follow the camera-ready PDF.
 
 | Paper row | Folder | Family / registry key | Params | Paper → reproduced | Status |
 |---|---|---|---:|:---:|---|
 | Table 1 TLIO GINIO-W | `tlio_ginio_w_ln189` | `src/` · `ln_resnet` (two weight sets, see MANIFEST) | 0.57M | 1.615 → 1.615 (ID/ID) | PINNED / ID-SO(3) CKPT_ONLY |
 | Table 1 TLIO EqNIO | `tlio_eqnio_o2` | `eqnio/` · `eq_o2_frame_fullCov_2vec_2deep` | 6.02M | 1.554 → 1.554 · 76.389 → 76.39 | PINNED |
 | Table 1 TLIO ResNet+SCEKF+aug. | `tlio_resnet_so3aug` | `src/` · `resnet` | 5.42M | 1.844 → 1.842 | CKPT_ONLY |
-| Table 1 TLIO ResNet+SCEKF | `tlio_resnet_scekf_retrain2026` | `src/` · `resnet` (2026 retrain) | 5.42M | 1.725 → 1.746 | RETRAIN |
 | Table 1 TLIO ResNet-S+InEKF | `tlio_resnet_s_lfa_candidate` | `src/` · `resnet`, LFA | 5.42M | 2.814 → 2.876 | CKPT_ONLY |
-| Fig. 5(b) covariance arms | `tlio_fig5b_spec_s0v2`, `tlio_fig5b_diag_s0v2` | `src/` · `ln189_speccov_s0`, `ln189_speccov_s0_diag` | 1.38M | 1.081 / 1.072 → same | PINNED |
 | Table 1 RIDI GINIO-W, Sec. 4.2 NN-only | `ridi_ginio_w` | `src/` · `ln_resnet_slope1_nobias` | 0.57M | 0.927 → 0.927 (NN); filter cells not reproduced | PINNED / CKPT_ONLY |
 | Table 1 RIDI "EqNIO" (SO(3)-aug.) | `ridi_eqnio_o2_so3aug` | `eqnio/` · `eq_o2_frame_fullCov_2vec_2deep` | 6.02M | 2.408 → 2.408 | PINNED / ID-SO(3) CKPT_ONLY |
 | Table 1 RIDI ResNet+SCEKF+aug. | `ridi_resnet_so3aug` | `src/` · `resnet` | 5.42M | 1.401 → no stored output | CKPT_ONLY |
@@ -138,14 +137,14 @@ loading anything. Table numbers follow the camera-ready PDF.
 | Table 2 GINIO-E | `nanobench_ginio_e_so3aug_tlio` | `eqnio/` · `eq_so3_frame_fullCov_2vec_2deep` (TLIO-trained, zero-shot) | 6.03M | 0.785 → 0.7854 | PINNED |
 | Table 2 GINIO-RD | `nanobench_ginio_rd_t119` | `src/` · `ln_resnet` (0.775 s window, no LFA) | 0.54M | 0.581 → 0.5805 | PINNED |
 | Table 2 GINIO-RS | `nanobench_ginio_rs_chol_mse` | `src/` · `ln_resnet_chol` (trained **without** LFA) | 0.80M | 0.789 → 0.7887 | PINNED (label caveat) |
-| Table 8 covariance ablation | `nanobench_ginio_rd_lfa_{mse,nll}`, `nanobench_ginio_rs_chol_{mse,nll}` | `src/` · `ln_resnet`, `ln_resnet_chol` | 0.57M / 0.80M | all cells reproduce except Spectral/NLL NLL and NEES | PINNED / UNSUPPORTED |
-| Table 9 NanoBench aug. baselines | `nanobench_resnet1d_so3aug`, `nanobench_eqnio_o2_so3aug` | `src/` · `resnet`; `eqnio/` | 5.42M / 6.02M | sweeps measured, printed values differ | CKPT_ONLY |
 
-Not in the table but released as controls or references: `tlio_eqnio_o2_ours`, `ridi_eqnio_o2_noaug`,
-`ridi_resnet_epoch1`, `ridi_imunet_reimpl`, `nanobench_airio_*_serverb`, `nanobench_ginio_rd_t55`,
-`nanobench_ginio_rd_nolfa_nll_matched`. **Not released because nothing survives:** the Fetch models
-(Tables 10–12), AquaticVision (Table 13), GINIO-S on TLIO/RIDI, the RIDI ResNet+SCEKF model, the
-Table 2 ID/SO(3) generator for the non-equivariant rows, and the 0.273M GINIO-A originals of
+Documented in the MANIFEST but **not part of `v1.0-corl2026`** (available on request; planned as a
+later asset): the Fig. 5(b) frozen-mean covariance arms, the Table 8 covariance-ablation models other
+than the Table 2 GINIO-RS, the Table 9 SO(3)-augmented NanoBench baselines, the 2026 ResNet+SCEKF
+retrain (the TLIO authors' own [pretrained ResNet](https://github.com/CathIAS/TLIO) is the reference
+for that row) and eight non-paper controls. **Not released because nothing survives:** the Fetch
+models (Tables 10–12), AquaticVision (Table 13), GINIO-S on TLIO/RIDI, the RIDI ResNet+SCEKF model,
+the Table 2 ID/SO(3) generator for the non-equivariant rows, and the 0.273M GINIO-A originals of
 Table 4 (they no longer load strictly). Details and evidence: [`checkpoints/MANIFEST.md`](checkpoints/MANIFEST.md),
 [`docs/PAPER_ARTIFACT_MAP.md`](docs/PAPER_ARTIFACT_MAP.md), [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md).
 
@@ -232,8 +231,7 @@ attribution, please open an issue and we will fix it. Related repositories from 
 
 ## Citation
 
-GINIO is equivariant to rotations but not invariant to stars: if the code or the checkpoints helped
-your work, a ⭐ genuinely changes our output, and please cite the paper.
+If the code or the checkpoints helped your work, please cite the paper.
 
 ```bibtex
 @inproceedings{kim2026ginio,
@@ -245,8 +243,15 @@ your work, a ⭐ genuinely changes our output, and please cite the paper.
 }
 ```
 
+---
+
 <div align="center">
 
-[![Star History Chart](https://api.star-history.com/svg?repos=chankyo123/GINIO&type=Date)](https://star-history.com/#chankyo123/GINIO&Date)
+**If GINIO saved you a remount, please leave a ⭐**
+
+GINIO is equivariant to rotations but not invariant to stars: a star genuinely changes our output,
+helps other people find the checkpoints, and tells us the release was worth the effort.
+
+[![Star GINIO](https://img.shields.io/github/stars/chankyo123/GINIO?style=for-the-badge&logo=github&label=Star%20GINIO&color=263759)](https://github.com/chankyo123/GINIO/stargazers)
 
 </div>

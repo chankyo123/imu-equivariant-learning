@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Download GINIO checkpoint archives from the GitHub Release and verify their SHA-256.
 #
-#   bash scripts/download_checkpoints.sh                       # all four archives (~1.2 GB)
+#   bash scripts/download_checkpoints.sh                       # all four archives (~0.7 GB)
 #   bash scripts/download_checkpoints.sh nanobench               # one benchmark: tlio | ridi | nanobench
 #   bash scripts/download_checkpoints.sh results                 # paper_results.tar.gz (stored outputs behind the numbers)
 #   GINIO_RELEASE_TAG=v1.0-corl2026 bash scripts/download_checkpoints.sh

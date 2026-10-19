@@ -14,6 +14,12 @@ continue to apply to the corresponding files.
 | liegroups | dependency (`DiagRotParam` in `src/network/covariance_parametrization.py`) | https://github.com/utiasSTARS/liegroups | MIT |
 | PyPose | dependency (`pp.SO3` in `airio/`) | https://github.com/pypose/pypose | Apache-2.0 |
 
+**Checkpoints.** `tlio_eqnio_o2` in the release assets is, to the best of our records, the EqNIO
+authors' published TLIO O(2) checkpoint (not trained by us), redistributed unchanged so that the
+Table 1 EqNIO row can be reproduced; it remains subject to whatever terms its authors attach, and we
+will replace it with a download link on request. Every other released checkpoint was trained by us;
+those trained on TLIO golden inherit its CC BY-NC terms.
+
 Datasets are not redistributed in this repository. TLIO golden (CC BY-NC), RIDI, NanoBench
 and AquaticVision are distributed by their respective authors under their own terms; see the
 README for links.
